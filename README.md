@@ -1,3 +1,3 @@
 # ha-mppt-modbus-addon
-串口服務器 mppt modbus mqtt to ha
+modbus gateway to mppt  get data and push to ha </br>
 mppt v1.1
