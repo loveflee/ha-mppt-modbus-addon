@@ -16,8 +16,8 @@ options:
 
   mqtt_host: "homeassistant.local"      # MQTT Broker IP（通常就是 HA 的 IP）
   mqtt_port: 1883
-  mqtt_username: "新增帳號"
-  mqtt_password: "新增帳號密碼"
+  mqtt_username: "add new user in ha"
+  mqtt_password: "only Local network can login"
 
   slave_ids: "1,2,3,4,5"          # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
   poll_interval_seconds: 20       # 輪詢間隔秒數
