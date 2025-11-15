@@ -21,7 +21,7 @@ options:
 
   slave_ids: "1,2,3,4,5"          # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
   poll_interval_seconds: 20       # 輪詢間隔秒數
-  device_delay_ms: 500            # 每台設備間隔，毫秒
+  device_delay_ms: 1000            # 每台設備間隔，毫秒
 
   node_id: "wifi01"               # 在 HA 中當作此 Node 的識別
   module_name: "mppt"             # module 名，方便未來擴充
