@@ -187,7 +187,7 @@ class MPPTPoller:
                  return
 
             sock.send(packet)
-            sock.settimeout(1.5) # 設置接收超時時間
+            sock.settimeout(3.0) # 設置接收超時時間
             response = sock.recv(93)
 
             if len(response) != 93:
