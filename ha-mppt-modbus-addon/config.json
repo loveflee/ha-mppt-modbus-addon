@@ -10,9 +10,9 @@
   "ports": {},
   "map": ["config:ro"],
   "options": {
-    "modbus_server": "192.168.106.12",
+    "modbus_server": "modbus_gateway_ip",
     "modbus_port": 502,
-    "mqtt_broker": "192.168.106.5",
+    "mqtt_broker": "core_mosquitto",
     "mqtt_port": 1883,
     "mqtt_user": "mqtt",
     "mqtt_password": "mqtt",
@@ -34,3 +34,4 @@
     "node_id": "str"
   }
 }
+
