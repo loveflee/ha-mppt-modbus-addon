@@ -1,0 +1,36 @@
+{
+  "name": "MPPT Modbus MQTT",
+  "version": "1.0.0",
+  "slug": "mppt_modbus",
+  "description": "MPPT RS485 Modbus Poller with MQTT for Home Assistant",
+  "url": "https://github.com/loveflee/ha-mppt-modbus-addon",
+  "arch": ["amd64", "armv7", "arm64"],
+  "startup": "application",
+  "boot": "auto",
+  "ports": {},
+  "map": ["config:ro"],
+  "options": {
+    "modbus_server": "modbus_gateway_ip",
+    "modbus_port": 502,
+    "mqtt_broker": "core_mosquitto",
+    "mqtt_port": 1883,
+    "mqtt_user": "ha-add-newuser",
+    "mqtt_password": "ha-add-newuser-only-local-net",
+    "slave_ids": [1,2,3,4,5],
+    "poll_interval": 20,
+    "poll_between_devices": 2,
+    "node_id": "wifi01"
+  },
+  "schema": {
+    "modbus_server": "str",
+    "modbus_port": "int",
+    "mqtt_broker": "str",
+    "mqtt_port": "int",
+    "mqtt_user": "str",
+    "mqtt_password": "str",
+    "slave_ids": ["int"],
+    "poll_interval": "int",
+    "poll_between_devices": "int",
+    "node_id": "str"
+  }
+}
