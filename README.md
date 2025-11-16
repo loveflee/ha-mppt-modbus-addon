@@ -1,6 +1,6 @@
 # ha-mppt-modbus-addon
-modbus gateway to ampinvt mppt  get data and push to ha </br>
 ampinvt mppt rs485v1.1 </br>
+This add-on connects to an Ampinvt MPPT solar charge controller through a Modbus TCP gateway, polls device data, and publishes it to Home Assistant using MQTT.</br>
 
 附加元件 讀取 串口服務器下的 ampinvt mppt </br>
 建議日出重啟附加元件 </br>
