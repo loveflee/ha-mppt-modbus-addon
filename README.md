@@ -50,3 +50,5 @@ actions:
     action: hassio.addon_restart
 mode: single
 ```
+附加元件的日誌訊息更新較慢推薦使用 mqtt explorer 觀察訊息
+https://mqtt-explorer.com/
