@@ -1,6 +1,6 @@
 # ha-mppt-modbus-addon
 modbus gateway to ampinvt mppt  get data and push to ha </br>
-ampinvt mppt v1.1 </br>
+ampinvt mppt rs485v1.1 </br>
 
 附加元件 讀取 串口服務器下的 ampinvt mppt </br>
 建議日出重啟附加元件 </br>
