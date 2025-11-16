@@ -2,6 +2,8 @@ name: "MPPT Modbus MQTT Poller"
 version: "1.0.0"
 slug: "mppt_modbus_mqtt_poller"
 description: "透過 Modbus gateway 讀取 MPPT 資料並發佈到 MQTT，提供給 Home Assistant 使用。"
+url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+documentation: "https://github.com/loveflee/ha-mppt-modbus-addon"
 arch:
   - amd64
   - armv7
@@ -14,7 +16,7 @@ options:
   modbus_host: "modbus_gatway_ip"   # 串口伺服器 / MPPT Modbus TCP Server IP
   modbus_port: 502                # Modbus TCP port
 
-  mqtt_host: "homeassistant.local"      # MQTT Broker IP（通常就是 HA 的 IP）
+  mqtt_host: "core-mosquitto"      # MQTT Broker IP（通常就是 HA 的 IP）
   mqtt_port: 1883
   mqtt_username: "add new user in ha"
   mqtt_password: "only Local network can login"
