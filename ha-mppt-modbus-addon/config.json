@@ -2,13 +2,17 @@
   "name": "MPPT Modbus MQTT",
   "version": "1.0.0",
   "slug": "mppt_modbus",
-  "description": "MPPT RS485 Modbus Poller with MQTT for Home Assistant",
+  "description": "透過 Modbus gateway 讀取 MPPT 資料並發佈到 MQTT，提供給 Home Assistant 使用。詳細設定與說明請參閱下方「文件」。",
   "url": "https://github.com/loveflee/ha-mppt-modbus-addon",
+  "documentation": "https://github.com/loveflee/ha-mppt-modbus-addon#readme",
   "arch": ["amd64", "armv7", "arm64"],
   "startup": "application",
   "boot": "auto",
+  // 沒有需要對外開放的 port，所以維持空物件
   "ports": {},
+  // 可以讀取 HA 設定（如果之後要自動偵測 MQTT broker 可用）
   "map": ["config:ro"],
+  // 預設選項（會對應到 /data/options.json）
   "options": {
     "modbus_server": "modbus_gateway_ip",
     "modbus_port": 502,
@@ -16,11 +20,12 @@
     "mqtt_port": 1883,
     "mqtt_user": "ha-add-newuser",
     "mqtt_password": "ha-add-newuser-only-local-net",
-    "slave_ids": [1,2,3,4,5],
+    "slave_ids": [1, 2, 3, 4, 5],
     "poll_interval": 20,
     "poll_between_devices": 2,
     "node_id": "wifi01"
   },
+  // 前端表單的型別定義
   "schema": {
     "modbus_server": "str",
     "modbus_port": "int",
