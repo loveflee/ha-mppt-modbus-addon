@@ -31,16 +31,22 @@ mode: single
 ```
 自動化2
 ```
-alias: 重啟 ha 後也重啟讀取 mppt
+alias: HA 重啟後 重啟讀取 mppt
 description: ""
 triggers:
-  - trigger: state
-    entity_id:
-      - input_button.restart_ha
-conditions: []
+  - event: start
+    trigger: homeassistant
 actions:
-  - action: homeassistant.restart
-    metadata: {}
-    data: {}
+  - data:
+      addon: 34caa00e_mppt_modbus_mqtt_poller
+    action: hassio.addon_restart
+  - delay:
+      hours: 0
+      minutes: 2
+      seconds: 0
+      milliseconds: 0
+  - data:
+      addon: 34caa00e_mppt_modbus_mqtt_poller
+    action: hassio.addon_restart
 mode: single
 ```
