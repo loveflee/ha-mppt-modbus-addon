@@ -16,11 +16,12 @@ description: ""
 ```
 自動化
 ```
-alias: 日出 重啟附加元件 mppt 讀取
+alias: 日出 前20分鐘重啟 mppt 讀取
 description: ""
 triggers:
-  - trigger: sun
-    event: sunrise
+  - event: sunrise
+    offset: "-00:20:00"
+    trigger: sun
 conditions: []
 actions:
   - action: hassio.addon_restart
@@ -28,6 +29,7 @@ actions:
     data:
       addon: 34caa00e_mppt_modbus_mqtt_poller
 mode: single
+
 ```
 自動化2
 ```
@@ -36,15 +38,17 @@ description: ""
 triggers:
   - event: start
     trigger: homeassistant
+conditions:
+  - condition: time
+    after: "05:00:00"
+    before: "21:00:00"
 actions:
-  - data:
-      addon: 34caa00e_mppt_modbus_mqtt_poller
-    action: hassio.addon_restart
   - delay:
       hours: 0
-      minutes: 2
-      seconds: 0
+      minutes: 0
+      seconds: 30
       milliseconds: 0
+    enabled: true
   - data:
       addon: 34caa00e_mppt_modbus_mqtt_poller
     action: hassio.addon_restart
