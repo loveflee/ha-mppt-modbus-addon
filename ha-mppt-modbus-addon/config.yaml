@@ -26,7 +26,7 @@ options:
   device_delay_ms: 1000            # 每台設備間隔，毫秒
 
   node_id: "wifi01"               # 在 HA 中當作此 Node 的識別
-  module_name: "mppt"             # module 名，方便未來擴充
+  module_name: "ampinvt_mppt"             # module 名，方便未來擴充
 
   latitude: 24.15                 # 位置，用於日出/日落等邏輯（如有）
   longitude: 120.67
