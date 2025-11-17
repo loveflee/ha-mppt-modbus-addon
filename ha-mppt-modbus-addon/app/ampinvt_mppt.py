@@ -5,6 +5,8 @@
 修正了 Modbus 查詢封包，包含正確的 8 bytes 格式和校驗碼，以解決超時問題。
 支援多台 MPPT 設備輪詢，並嚴格控制設備間隔和總輪詢週期。
 HA Discovery 會為每個 Slave ID 創建一個獨立的 Home Assistant 裝置。
+
+💡 優化日誌輸出：移除冗餘的單設備成功訊息，改為週期性輸出精簡的輪詢結果摘要。
 """
 
 import time
@@ -16,7 +18,6 @@ from typing import Dict, Any, List
 
 # ========================
 # ⚙️ 參數設定與感測器集中映射表 (常量)
-# 確保這些 Key 與 _parse_response 中解析出來的 Key 一致
 # ========================
 
 # 數值型感測器定義 (Key: (名稱, 單位, device_class, state_class))
@@ -236,8 +237,11 @@ class MPPTPoller:
     # 🔁 查詢與發佈資料
     # ========================
 
-    def _query_and_publish(self, address: int):
-        """ 對單一 Modbus 地址進行查詢和數據發佈 """
+    def _query_and_publish(self, address: int) -> str:
+        """ 
+        對單一 Modbus 地址進行查詢和數據發佈，並返回狀態 (OK, FAIL, TOUT)。
+        此函數不再輸出成功日誌。
+        """
         
         packet = self._build_query_packet(address)
 
@@ -247,12 +251,13 @@ class MPPTPoller:
             sock = modbus_client.socket 
             
             if sock is None:
+                # 僅在發生問題時輸出，不重複連線狀態
                 print(f"⚠️ 地址 {address}: Modbus 連線未建立或已斷開，跳過查詢。", file=sys.stderr)
-                return
+                return "FAIL"
 
             # 核心 Modbus 通訊
             sock.send(packet)
-            # 設置接收超時時間 (2.0 秒，比舊版稍微寬鬆一點)
+            # 設置接收超時時間 (2.0 秒)
             sock.settimeout(2.0) 
             
             # 預期接收 93 bytes
@@ -260,7 +265,7 @@ class MPPTPoller:
 
             if len(response) != 93:
                 print(f"⚠️ 地址 {address} 無效回應（長度 {len(response)}），跳過發佈。", file=sys.stderr)
-                return
+                return "FAIL"
             
             # TODO: 實際應用中，請在此處加入 Checksum/CRC 驗證
 
@@ -282,12 +287,16 @@ class MPPTPoller:
                 topic = f"{self.node_id}_{self.module_name}/{address}/{key}/state"
                 self.mqtt_client.publish(topic, payload, retain=self.retain)
 
-            print(f"✅ 地址 {address} 數據發佈完成。")
+            # 成功時不再輸出日誌，僅返回狀態
+            return "OK"
 
         except Exception as e:
             # 捕捉所有異常，包括 socket 超時 (timed out)
+            status = "ERR" # Default error status
+            if "timed out" in str(e):
+                 status = "TOUT"
             print(f"❌ 查詢地址 {address} 發生錯誤: {e}", file=sys.stderr)
-            # 在這裡我們不嘗試重連 Modbus，讓 ModbusManager 在下次 get_client() 時自動處理重連。
+            return status
 
     # ========================
     # 🏃 主輪詢迴圈
@@ -310,23 +319,29 @@ class MPPTPoller:
         try:
             while True:
                 cycle_start_time = time.time()
+                
+                device_statuses = [] # 收集本輪的輪詢結果
 
                 # 2. 核心輪詢迴圈
                 for i, slave_id in enumerate(self.slave_ids_to_poll):
-                    print(f"\n--- 開始讀取設備 {i+1}/{len(self.slave_ids_to_poll)} (地址 {slave_id}) ---")
-
-                    self._query_and_publish(slave_id)
+                    
+                    status = self._query_and_publish(slave_id)
+                    device_statuses.append(f"({slave_id}:{status})") # 記錄結果 e.g. (4:OK)
 
                     # 3. 控制設備間間隔 (避免 Modbus 衝突)
                     if i < len(self.slave_ids_to_poll) - 1 and self.poll_interval_between_devices > 0:
-                        print(f"等待 {self.poll_interval_between_devices:.2f} 秒後讀取下一台...")
+                        # 移除冗餘的等待日誌，只執行等待
                         time.sleep(self.poll_interval_between_devices)
+                
+                # 輸出精簡的輪詢結果摘要 (優化後的日誌輸出)
+                print(f"\n📊 輪詢結果: {' '.join(device_statuses)}") 
 
                 # 4. 確保符合總輪詢週期
                 cycle_elapsed_time = time.time() - cycle_start_time
                 time_to_wait = self.total_poll_interval - cycle_elapsed_time
 
                 if time_to_wait > 0:
+                    # 修正：等待時間的日誌放在這裡，輸出總等待時間
                     print(f"\n✅ 本輪輪詢完成。等待 {time_to_wait:.2f} 秒，進入下一輪。")
                     time.sleep(time_to_wait)
                 else:
