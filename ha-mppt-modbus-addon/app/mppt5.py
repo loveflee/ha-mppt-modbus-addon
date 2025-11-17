@@ -91,8 +91,8 @@ class MPPTPoller:
             print("🛑 錯誤：SLAVE_IDS_TO_POLL 列表為空，請配置要讀取的地址。", file=sys.stderr)
 
         self.device_info_base = {
-            "model": "MPPT RS485 (優化輪詢版)",
-            "manufacturer": "佛山金广源"
+            "model": "ampinvt RS485 (多設備輪詢版)",
+            "manufacturer": "ampinvt"
         }
 
     # ========================
