@@ -34,9 +34,9 @@ echo "當前工作目錄：$(pwd)"
 echo "目錄內容："
 ls -al
 
-# 檢查 mppt_modbus_app.py 是否存在
-if [ ! -f "mppt_modbus_app.py" ]; then
-  echo "[ERROR] /app/mppt_modbus_app.py 不存在，無法啟動程式" >&2
+# 檢查 ampinv_mppt.py 是否存在
+if [ ! -f "ampinvt_mppt.py" ]; then
+  echo "[ERROR] /app/ampinvt_mppt.py 不存在，無法啟動程式" >&2
   exit 1
 fi
 
@@ -55,4 +55,4 @@ echo "HA Node ID: ${NODE_ID}"
 # 執行主程式
 # 如果未來你用 click/typer 的 command line，可以保留參數 `run dummy_modbus_manager`
 python3 /app/main.py
-#exec python3 mppt_modbus_app.py run dummy_modbus_manager
+
