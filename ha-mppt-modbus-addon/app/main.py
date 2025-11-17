@@ -2,7 +2,7 @@
 import json
 import sys
 import os
-import mppt5
+import ampinvt_mppt
 
 def load_options():
     """ 載入 /data/options.json 裡的設定 """
@@ -24,8 +24,8 @@ def main():
         # 由於 run.sh 已經打印了大部分配置，這裡不再重複打印整個字典
         # print(f"✅ 成功載入配置。") 
 
-        # 2. 執行 mppt5 模組的主邏輯
-        mppt5.run(options)
+        # 2. 執行 ampinvt_mppt 模組的主邏輯
+        ampinvt_mppt.run(options)
 
     except Exception as e:
         print(f"❌ 程式發生例外: {e}")
