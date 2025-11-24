@@ -1,4 +1,4 @@
-# 使用官方 Python 映像
+# Dockerfile 使用官方 Python 映像
 FROM python:3.11-slim
 
 # 設定工作目錄
@@ -23,7 +23,7 @@ COPY app /app
 COPY run.sh /usr/local/bin/run.sh
 RUN chmod +x /usr/local/bin/run.sh
 
-# 預設時區（仍可以透過容器環境變數覆蓋）
+# 預設時區（仍可以透過容器環境變數或 Add-on options 覆蓋）
 ENV TZ=Asia/Taipei
 
 # 啟動指令：執行 run.sh
