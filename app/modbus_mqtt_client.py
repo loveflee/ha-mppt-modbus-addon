@@ -1,19 +1,14 @@
-# /app/client/modbus_mqtt_client.py
-
+# client/modbus_mqtt_client.py
 """
 📌 Modbus 與 MQTT 連線管理模組
-- 統一管理連線資訊、建立連線物件、避免重複連線
-- Modbus: 取用 client 時自動檢查/重連
-- MQTT: on_connect / on_disconnect 回調 + 自動重連
+統一管理連線資訊、建立連線物件、避免重複連線
+同時提供自動重連的功能
 """
-
 from pymodbus.client import ModbusTcpClient
 import paho.mqtt.client as mqtt
 import threading
 import time
-import logging
-
-logger = logging.getLogger(__name__)
+import sys
 
 # 全局變數用於儲存從主程序傳入的配置
 CONFIG = {}
@@ -27,10 +22,11 @@ def initialize_config(options: dict):
     global CONFIG, _modbus_manager_instance
     CONFIG = options
 
+    # 初始化 Modbus Manager 實例
     if _modbus_manager_instance is None:
         modbus_host = CONFIG.get('modbus_host')
         modbus_port = CONFIG.get('modbus_port')
-        node_id = CONFIG.get('node_id', "ha_mppt_node")
+        node_id = CONFIG.get('node_id', "ha_mppt_node")  # 提供預設值
 
         if modbus_host and modbus_port:
             _modbus_manager_instance = ModbusManager(
@@ -39,7 +35,7 @@ def initialize_config(options: dict):
                 node_id=node_id
             )
         else:
-            logger.error("Modbus 連線設定不完整，請確認 modbus_host / modbus_port。")
+            print("❌ 錯誤: Modbus 連線設定不完整。", file=sys.stderr)
 
 
 # ==============================
@@ -52,8 +48,9 @@ class ModbusManager:
     def __init__(self, host, port, node_id):
         self.host = host
         self.port = port
-        self.node_id = node_id
+        self.node_id = node_id  # 用於 log 輸出
         self.lock = threading.Lock()
+        # timeout: 3 秒，避免堵太久
         self.client = ModbusTcpClient(host=self.host, port=self.port, timeout=3)
         self._connect()
 
@@ -63,23 +60,25 @@ class ModbusManager:
         """
         if not self.client.is_socket_open():
             if self.client.connect():
-                logger.info(f"✅ Modbus NODE {self.node_id} 已連線: {self.host}:{self.port}")
+                print(f"✅ Modbus NODE {self.node_id} 已連線: {self.host}:{self.port}")
                 return True
             else:
-                logger.warning(f"⚠️ Modbus NODE {self.node_id} 連線失敗: {self.host}:{self.port}")
+                print(f"⚠️ Modbus NODE {self.node_id} 連線失敗: {self.host}:{self.port}", file=sys.stderr)
                 return False
         return True
 
     def get_client(self):
         """
         提供 Modbus client 實例（保持連線）
-        - 每次取得時都檢查 socket 狀態，必要時自動重連
+        如果連線中斷，會嘗試重新連線。
         """
         with self.lock:
             if not self.client.is_socket_open():
-                logger.warning(f"⚠️ Modbus NODE {self.node_id} 連線中斷，嘗試重新連線...")
+                print(f"⚠️ Modbus NODE {self.node_id} 連線中斷，嘗試重新連線...", file=sys.stderr)
                 self.client.close()
                 self._connect()
+
+            # 即使重連失敗，也返回 client，讓上層呼叫去處理異常
             return self.client
 
     def close(self):
@@ -87,69 +86,59 @@ class ModbusManager:
         結束連線
         """
         with self.lock:
-            try:
-                self.client.close()
-            except Exception:
-                pass
-            logger.info(f"Modbus NODE {self.node_id} 連線已關閉。")
+            self.client.close()
 
 
 # ==============================
-# 🟣 MQTT 客戶端（共用）
+# 🟣 MQTT 客戶端（共用 + 自動重連）
 # ==============================
 def get_mqtt_client():
     """
     建立 MQTT 客戶端（共用設定，從 CONFIG 讀取）
+    並加上 on_connect / on_disconnect 做基本連線診斷與重連。
     """
     mqtt_broker = CONFIG.get('mqtt_host')
     mqtt_port = CONFIG.get('mqtt_port')
     mqtt_username = CONFIG.get('mqtt_username')
     mqtt_password = CONFIG.get('mqtt_password')
 
-    if mqtt_broker is None or mqtt_port is None:
-        raise ValueError("MQTT Broker 設定不完整 (mqtt_host/mqtt_port)")
+    if not all([mqtt_broker, mqtt_port, mqtt_username is not None, mqtt_password is not None]):
+        raise ValueError("MQTT 配置不完整，無法建立客戶端。")
 
-    # username/password 可以允許為空（匿名模式），所以不硬性檢查 not None
+    # Client ID 建議加上唯一標識
     client_id = f"{CONFIG.get('node_id', 'ha_mppt_node')}_mqtt_poller"
     client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
+    client.username_pw_set(mqtt_username, mqtt_password)
 
-    if mqtt_username is not None and mqtt_password is not None:
-        client.username_pw_set(mqtt_username, mqtt_password)
-
-    # ==========
-    # 回調設定
-    # ==========
-    def on_connect(client, userdata, flags, rc, properties=None):
+    # ✅ 連線回調：顯示成功 / 失敗
+    def on_connect(client, userdata, flags, rc):
         if rc == 0:
-            logger.info(f"✅ MQTT Broker 已連線: {mqtt_broker}:{mqtt_port}")
+            print(f"✅ MQTT Broker 已連線: {mqtt_broker}:{mqtt_port}")
         else:
-            logger.error(f"❌ MQTT Broker 連線失敗，回傳碼: {rc}")
+            print(f"❌ MQTT Broker 連線失敗，回傳碼: {rc}", file=sys.stderr)
 
-    def on_disconnect(client, userdata, rc, properties=None):
+    # ✅ 斷線回調：簡單自動重連邏輯
+    def on_disconnect(client, userdata, rc):
         if rc != 0:
-            logger.warning(f"⚠️ MQTT 非預期斷線 (rc={rc})，準備自動重連...")
-            # 啟動一個背景執行緒做重連，避免卡住 callback thread
-            def _reconnect_loop():
-                backoff = 5
-                while True:
-                    try:
-                        logger.info("嘗試重新連線 MQTT Broker...")
-                        client.reconnect()
-                        logger.info("MQTT 重連成功。")
-                        break
-                    except Exception as e:
-                        logger.error(f"MQTT 重連失敗: {e}，{backoff} 秒後再試一次。")
-                        time.sleep(backoff)
-
-            t = threading.Thread(target=_reconnect_loop, daemon=True)
-            t.start()
+            print(f"⚠️ 與 MQTT Broker 非正常斷線 (rc={rc})，啟動自動重連...", file=sys.stderr)
         else:
-            logger.info("MQTT 正常斷線。")
+            print("ℹ️ 已從 MQTT Broker 正常斷線。")
+
+        # 嘗試重連（loop_start 已在外面啟動）
+        while True:
+            try:
+                result = client.reconnect()
+                if result == mqtt.MQTT_ERR_SUCCESS:
+                    print("✅ MQTT 自動重連成功。")
+                    break
+                else:
+                    print(f"⚠️ MQTT 重連失敗，回傳碼: {result}，5 秒後重試...", file=sys.stderr)
+            except Exception as e:
+                print(f"❌ MQTT 重連過程發生例外: {e}，5 秒後重試...", file=sys.stderr)
+            time.sleep(5)
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
-
-    # （如果未來需要 LWT，可以在這裡設定 client.will_set(...)）
 
     return client
 
