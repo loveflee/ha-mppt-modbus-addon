@@ -1,3 +1,4 @@
+#config.yaml
 name: "MPPT Modbus MQTT Poller"
 version: "1.0.0"
 slug: "mppt_modbus_mqtt_poller"
