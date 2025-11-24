@@ -2,23 +2,24 @@
 """
 📌 佛山金廣源 ampinvt MPPT RS485 通訊模組 - 多設備輪詢優化完整版
 
-此版本：
-- 使用 logging 模組做標準化日誌輸出（支援 log_level 設定）
-- 支援多台 MPPT 輪詢，並控制設備間間隔與總輪詢週期
-- Home Assistant Discovery 為每個 Slave ID 建立獨立裝置
-- 精簡輪詢結果輸出，僅在每輪結束時輸出摘要：
-  ✅ INFO: 輪詢結果: (1:OK) (2:OK) (3:OK) (4:OK) (5:OK) 下一輪 18.52 秒後
+此版本功能：
+- 多設備輪詢
+- HA MQTT Discovery
+- 自動 Modbus / MQTT 重連（在 modbus_mqtt_client.py 中）
+- 啟動延遲 10 秒（在 main.py）
+- 時區設定（由 options / 環境變數 TZ 控制）
+- ✅ 支援「除錯模式」：可輸出 Modbus TX/RX 十六進位資訊
+- ✅ 精簡 Info 日誌：每輪只輸出一行輪詢摘要
+
 """
 
 import time
 import json
-import logging
 import paho.mqtt.client as mqtt
 import modbus_mqtt_client
-import sys
+import sys  # 用於日誌輸出
 from typing import Dict, Any, List
 
-logger = logging.getLogger(__name__)
 
 # ========================
 # ⚙️ 參數設定與感測器集中映射表 (常量)
@@ -63,10 +64,10 @@ BINARY_SENSOR_MAPPING = {
 }
 
 
+# ========================
+# 📦 MPPTPoller 類別 (核心邏輯)
+# ========================
 class MPPTPoller:
-    """
-    MPPT 輪詢核心類別
-    """
 
     def __init__(self, options: dict, modbus_manager, mqtt_client):
         """
@@ -80,6 +81,9 @@ class MPPTPoller:
         device_delay_ms = options.get('device_delay_ms', 500)
         self.poll_interval_between_devices = device_delay_ms / 1000.0
 
+        # ✅ 除錯模式 flag：開啟時會輸出 Modbus TX/RX HEX
+        self.debug_mode = bool(options.get('debug_mode', False))
+
         # 連線實例
         self.modbus_manager = modbus_manager
         self.mqtt_client = mqtt_client
@@ -89,11 +93,11 @@ class MPPTPoller:
         try:
             self.slave_ids_to_poll = [int(i.strip()) for i in slave_ids_str.split(',') if i.strip()]
         except ValueError:
-            logger.error("🛑 錯誤：無法解析 slave_ids，請檢查格式是否為 '1,2,3'")
+            print("🛑 錯誤：無法解析 slave_ids，請檢查格式是否為 '1,2,3'", file=sys.stderr)
             self.slave_ids_to_poll = []
 
         if not self.slave_ids_to_poll:
-            logger.error("🛑 錯誤：SLAVE_IDS_TO_POLL 列表為空，請配置要讀取的地址。")
+            print("🛑 錯誤：SLAVE_IDS_TO_POLL 列表為空，請配置要讀取的地址。", file=sys.stderr)
 
         self.device_info_base = {
             "model": "ampinvt RS485 (多設備輪詢版)",
@@ -106,46 +110,48 @@ class MPPTPoller:
 
     def _build_query_packet(self, address: int) -> bytes:
         """
-        [修正] 建立查詢封包：地址 + 0xB1 + 0x01 + [0x00,0x00,0x00,0x00] + 校驗 (共 8 bytes)
+        建立查詢封包：地址 + 0xB1 + 0x01 + [0x00,0x00,0x00,0x00] + 校驗 (共 8 bytes)
         """
         packet = bytearray([address, 0xB1, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
+        # 計算校驗碼 (前 7 個字節相加後取最低 8 位)
         checksum = sum(packet[:7]) & 0xFF
         packet[7] = checksum
         return bytes(packet)
 
     def _parse_response(self, data: bytes) -> dict:
         """
-        根據 PDF 協議解析 93 bytes 回傳欄位，並計算衍生值。
+        根據 PDF 協議，解析 93 bytes 回傳的所有欄位，並計算衍生值。
         """
         if len(data) != 93:
             raise ValueError(f"回應資料長度錯誤：收到 {len(data)} bytes，應為 93")
 
         result = {}
 
+        # --- 💡 輔助函數 ---
         def word_to_float(high, low, scale):
             return ((high << 8) | low) / scale
 
         def dword_to_int(d4, d3, d2, d1):
             return (d4 << 24) | (d3 << 16) | (d2 << 8) | d1
 
-        # 1️⃣ 狀態位
+        # ========== 1️⃣ 狀態位 (Byte 3, 4, 5) - Binary Sensor ==========
         result.update({
-            "run_status": bool(data[3] & 0x01),
-            "fan_status": bool(data[3] & 0x04),
-            "temp_status": bool(data[3] & 0x08),
-            "int_temp1_fault": bool(data[3] & 0x20),
-            "charging": bool(data[4] & 0x01),
-            "equalizing_charge": bool(data[4] & 0x02),
-            "tracking": bool(data[4] & 0x04),
-            "float_charge": bool(data[4] & 0x08),
-            "charge_limited": bool(data[4] & 0x10),
-            "pv_over_voltage": bool(data[4] & 0x80),
-            "load_output": bool(data[5] & 0x02),
-            "overcharge_protect": bool(data[5] & 0x10),
-            "overvoltage_protect": bool(data[5] & 0x20),
+            "run_status": bool(data[3] & 0x01),         # 運行狀態
+            "fan_status": bool(data[3] & 0x04),         # 風扇狀態
+            "temp_status": bool(data[3] & 0x08),        # 溫度保護
+            "int_temp1_fault": bool(data[3] & 0x20),    # 內部溫度1異常
+            "charging": bool(data[4] & 0x01),           # 充電中
+            "equalizing_charge": bool(data[4] & 0x02),  # 均充
+            "tracking": bool(data[4] & 0x04),           # MPPT 跟蹤
+            "float_charge": bool(data[4] & 0x08),       # 浮充
+            "charge_limited": bool(data[4] & 0x10),     # 充電限流
+            "pv_over_voltage": bool(data[4] & 0x80),    # PV 過壓
+            "load_output": bool(data[5] & 0x02),        # 負載輸出
+            "overcharge_protect": bool(data[5] & 0x10), # 過充保護
+            "overvoltage_protect": bool(data[5] & 0x20) # 過壓保護
         })
 
-        # 2️⃣ 系統參數 & 設定值
+        # ========== 2️⃣ 系統參數 & 設定值 (Sensor) ==========
         result.update({
             "battery_type": data[8],
             "battery_count": data[10],
@@ -155,7 +161,7 @@ class MPPTPoller:
             "max_charge_current": word_to_float(data[26], data[27], 100),
         })
 
-        # 3️⃣ 實際測量值
+        # ========== 3️⃣ 實際測量值 (Sensor) ==========
         result.update({
             "pv_voltage": word_to_float(data[30], data[31], 10),
             "battery_voltage": word_to_float(data[32], data[33], 100),
@@ -164,13 +170,13 @@ class MPPTPoller:
             "external_temp1": word_to_float(data[40], data[41], 100),
         })
 
-        # 4️⃣ 發電量 (Wh)
+        # ========== 4️⃣ 發電量 (Wh) ==========
         result.update({
             "today_yield_wh": dword_to_int(data[44], data[45], data[46], data[47]),
             "total_yield_wh": dword_to_int(data[48], data[49], data[50], data[51]),
         })
 
-        # 💡 計算瞬時功率
+        # 💡 計算瞬時充電功率 (W)
         try:
             charge_power = result["battery_voltage"] * result["charge_current"]
             result["charge_power"] = round(charge_power, 2)
@@ -193,7 +199,7 @@ class MPPTPoller:
             "name": f"MPPT 太陽能控制器 (地址 {address})",
         })
 
-        # 1. 數值型 sensor
+        # --- 1. 數值型感測器 (sensor) ---
         for key, (name, unit, device_class, _) in SENSOR_MAPPING.items():
 
             if key.endswith("_yield_wh"):
@@ -216,7 +222,7 @@ class MPPTPoller:
             payload = {k: v for k, v in payload.items() if v is not None}
             self.mqtt_client.publish(topic, json.dumps(payload), retain=self.retain)
 
-        # 2. 布林型 binary_sensor
+        # --- 2. 布林型感測器 (binary_sensor) ---
         for key, (name, device_class) in BINARY_SENSOR_MAPPING.items():
             topic = f"homeassistant/binary_sensor/{self.node_id}_{self.module_name}_{address}/{key}/config"
             payload = {
@@ -236,7 +242,11 @@ class MPPTPoller:
 
     def _query_and_publish(self, address: int) -> str:
         """
-        對單一 Modbus 地址進行查詢和數據發佈，並返回狀態 (OK, FAIL, TOUT)。
+        對單一 Modbus 地址進行查詢和數據發佈，並返回狀態:
+        - OK   : 成功
+        - FAIL : 回應異常或資料長度錯誤
+        - TOUT : 通訊逾時
+        - ERR  : 其他錯誤
         """
 
         packet = self._build_query_packet(address)
@@ -246,20 +256,32 @@ class MPPTPoller:
             sock = modbus_client.socket
 
             if sock is None:
-                logger.warning(f"地址 {address}: Modbus 連線未建立或已斷開，跳過查詢。")
+                print(f"⚠️ 地址 {address}: Modbus 連線未建立或已斷開，跳過查詢。", file=sys.stderr)
                 return "FAIL"
+
+            # ✅ 除錯模式：顯示送出的 Modbus 封包 (TX)
+            if self.debug_mode:
+                print(f"[DEBUG] TX (addr {address}): " +
+                      " ".join(f"{b:02X}" for b in packet))
 
             # 核心 Modbus 通訊
             sock.send(packet)
-            sock.settimeout(2.0)
+            sock.settimeout(2.0)  # 接收超時時間 (2 秒)
+
             response = sock.recv(93)
 
+            # ✅ 除錯模式：顯示收到的 Modbus 回應 (RX)
+            if self.debug_mode:
+                print(f"[DEBUG] RX (addr {address}, len={len(response)}): " +
+                      " ".join(f"{b:02X}" for b in response))
+
             if len(response) != 93:
-                logger.warning(f"地址 {address} 無效回應（長度 {len(response)}），跳過發佈。")
+                print(f"⚠️ 地址 {address} 無效回應（長度 {len(response)}），跳過發佈。", file=sys.stderr)
                 return "FAIL"
 
             values = self._parse_response(response)
 
+            # 發佈所有解析到的 key-value 對
             for key, value in values.items():
                 if key not in SENSOR_MAPPING and key not in BINARY_SENSOR_MAPPING:
                     continue
@@ -275,11 +297,10 @@ class MPPTPoller:
             return "OK"
 
         except Exception as e:
-            msg = str(e)
             status = "ERR"
-            if "timed out" in msg.lower():
+            if "timed out" in str(e).lower():
                 status = "TOUT"
-            logger.error(f"查詢地址 {address} 發生錯誤: {e}")
+            print(f"❌ 查詢地址 {address} 發生錯誤: {e}", file=sys.stderr)
             return status
 
     # ========================
@@ -290,55 +311,49 @@ class MPPTPoller:
         """ 啟動輪詢與發佈的無限迴圈 """
 
         if not self.slave_ids_to_poll:
-            logger.error("未配置任何設備地址，停止輪詢。")
+            print("❌ 未配置任何設備地址，停止輪詢。", file=sys.stderr)
             return
 
-        logger.info("🚀 啟動 HA Discovery 配置...")
+        # 1. 初始化：為所有設備發佈 HA Discovery (只需執行一次)
+        print("🚀 啟動 HA Discovery 配置...")
         for slave_id in self.slave_ids_to_poll:
             self._publish_discovery_config(slave_id)
-        logger.info(
-            "HA Discovery 配置完成。總輪詢週期: %s 秒，設備數: %d",
-            self.total_poll_interval,
-            len(self.slave_ids_to_poll),
-        )
+
+        print(f"配置完成。總輪詢週期設定為 {self.total_poll_interval} 秒。輪詢 {len(self.slave_ids_to_poll)} 台設備。")
 
         try:
             while True:
                 cycle_start_time = time.time()
-                device_statuses = []
+                device_statuses = []  # 收集本輪的輪詢結果
 
+                # 2. 核心輪詢迴圈
                 for i, slave_id in enumerate(self.slave_ids_to_poll):
+
                     status = self._query_and_publish(slave_id)
                     device_statuses.append(f"({slave_id}:{status})")
 
+                    # 3. 控制設備間間隔 (避免 Modbus 衝突)
                     if i < len(self.slave_ids_to_poll) - 1 and self.poll_interval_between_devices > 0:
                         time.sleep(self.poll_interval_between_devices)
 
                 cycle_elapsed_time = time.time() - cycle_start_time
                 time_to_wait = self.total_poll_interval - cycle_elapsed_time
 
+                # ✅ 精簡 Info 日誌：顯示輪詢結果 + 下一輪倒數
                 if time_to_wait > 0:
-                    # ✅ 你要求的精簡 INFO log 內容
-                    logger.info(
-                        "輪詢結果: %s 下一輪 %.2f 秒後",
-                        " ".join(device_statuses),
-                        time_to_wait,
-                    )
-                    time.sleep(time_to_wait)
+                    print(f"📊 輪詢結果: {' '.join(device_statuses)} | 下一輪 {time_to_wait:.2f} 秒後")
+                    time.sleep(max(time_to_wait, 0))
                 else:
-                    logger.warning(
-                        "輪詢耗時 (%.2fs) 超過總週期 (%.2fs)，立即開始下一輪。",
-                        cycle_elapsed_time,
-                        self.total_poll_interval,
-                    )
+                    # 耗時超出週期，立即下一輪，但避免 CPU 100%
+                    print(f"📊 輪詢結果: {' '.join(device_statuses)} | 警告：本輪耗時 {cycle_elapsed_time:.2f}s 超過設定週期 {self.total_poll_interval}s，立即開始下一輪。")
                     time.sleep(1)
 
         except KeyboardInterrupt:
-            logger.info("🛑 結束 MPPT 模組 (Keyboard Interrupt)")
+            print("🛑 結束 MPPT 模組 (Keyboard Interrupt)")
         except Exception as e:
-            logger.exception(f"致命錯誤：主輪詢迴圈中斷: {e}")
+            print(f"致命錯誤：主輪詢迴圈中斷: {e}", file=sys.stderr)
         finally:
-            logger.info("清理連線中...")
+            print("清理連線中...")
             try:
                 self.mqtt_client.loop_stop()
                 self.mqtt_client.disconnect()
@@ -348,7 +363,7 @@ class MPPTPoller:
                 self.modbus_manager.close()
             except Exception:
                 pass
-            logger.info("清理完成。程式退出。")
+            print("清理完成。程式退出。")
 
 
 # ========================
@@ -362,19 +377,22 @@ def run(options: dict):
     poller = None
     modbus_manager = None
     try:
+        # 1. 初始化配置和 Modbus/MQTT 連線管理
         modbus_mqtt_client.initialize_config(options)
         modbus_manager = modbus_mqtt_client.get_modbus_manager()
 
+        # 2. 建立並連線 MQTT 客戶端
         mqtt_client = modbus_mqtt_client.get_mqtt_client()
-        # Non-blocking connect
         mqtt_client.connect(options.get('mqtt_host'), options.get('mqtt_port'), 60)
         mqtt_client.loop_start()
 
+        # 3. 創建並啟動輪詢器
         poller = MPPTPoller(options, modbus_manager, mqtt_client)
         poller.start_polling()
 
     except Exception as e:
-        logger.exception(f"模組初始化或啟動失敗: {e}")
+        print(f"❌ 模組初始化或啟動失敗: {e}", file=sys.stderr)
+        # 嘗試清理連線
         if poller and hasattr(poller, 'mqtt_client'):
             try:
                 poller.mqtt_client.loop_stop()
