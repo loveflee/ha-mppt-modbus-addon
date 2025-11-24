@@ -14,23 +14,26 @@ boot: auto                 # HA 開機時自動啟動
 
 # ✅ 可以在 HA UI 修改的參數（會寫到 /data/options.json）
 options:
-  modbus_host: "modbus_gatway_ip"   # 串口伺服器 / MPPT Modbus TCP Server IP
-  modbus_port: 502                # Modbus TCP port
+  modbus_host: "modbus_gateway_ip"   # 串口伺服器 / MPPT Modbus TCP Server IP
+  modbus_port: 502                   # Modbus TCP port
 
-  mqtt_host: "core-mosquitto"      # MQTT Broker IP（通常就是 HA 的 IP）
+  mqtt_host: "core-mosquitto"        # MQTT Broker（通常就是 HA 的 MQTT 插件）
   mqtt_port: 1883
   mqtt_username: "add new user in ha"
   mqtt_password: "only Local network can login"
 
-  slave_ids: "1,2,3,4,5"          # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
-  poll_interval_seconds: 20       # 輪詢間隔秒數
-  device_delay_ms: 1000            # 每台設備間隔，毫秒
+  slave_ids: "1,2,3,4,5"             # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
+  poll_interval_seconds: 20          # 輪詢總週期秒數
+  device_delay_ms: 1000              # 每台設備間隔，毫秒
 
-  node_id: "wifi01"               # 在 HA 中當作此 Node 的識別
-  module_name: "ampinvt_mppt"             # module 名，方便未來擴充
+  node_id: "wifi01"                  # 在 HA 中當作此 Node 的識別
+  module_name: "ampinvt_mppt"        # module 名，方便未來擴充
 
-  latitude: 24.15                 # 位置，用於日出/日落等邏輯（如有）
+  latitude: 24.15                    # 位置，用於日出/日落等邏輯（如有）
   longitude: 120.67
+
+  timezone: "Asia/Taipei"            # 🕒 新增：時區設定（會套用到 TZ）
+  log_level: "INFO"                  # 📝 新增：log 等級（DEBUG/INFO/WARNING/ERROR）
 
 # ✅ options 型別定義（HA UI 驗證用）
 schema:
@@ -47,6 +50,8 @@ schema:
   module_name: str
   latitude: float
   longitude: float
+  timezone: str
+  log_level: str
 
 # 不用 environment，run.sh 會自己讀 /data/options.json
 map:
