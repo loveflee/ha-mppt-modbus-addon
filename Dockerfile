@@ -5,8 +5,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 安裝 tzdata + jq
-# tzdata：處理時區
-# jq：從 /data/options.json 讀 HA Add-on 設定
+# - tzdata：處理時區
+# - jq：從 /data/options.json 讀 HA Add-on 設定
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tzdata jq \
@@ -22,6 +22,12 @@ COPY app /app
 # 複製 run.sh 到 /usr/local/bin，並給予執行權限
 COPY run.sh /usr/local/bin/run.sh
 RUN chmod +x /usr/local/bin/run.sh
+
+# 預設時區（可被容器環境變數 TZ 覆蓋）
+ENV TZ=Asia/Taipei
+
+# 啟動指令：執行 run.sh
+CMD ["/usr/local/bin/run.sh"]
 
 # 預設時區（仍可以透過容器環境變數或 Add-on options 覆蓋）
 ENV TZ=Asia/Taipei
