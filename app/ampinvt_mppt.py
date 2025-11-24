@@ -239,7 +239,6 @@ class MPPTPoller:
     # ========================
     # 🔁 查詢與發佈資料
     # ========================
-
     def _query_and_publish(self, address: int) -> str:
         """
         對單一 Modbus 地址進行查詢和數據發佈，並返回狀態:
@@ -297,16 +296,17 @@ class MPPTPoller:
             return "OK"
 
         except Exception as e:
-            status = "ERR"
+            # ✅ 一律回傳狀態，讓上層可以在摘要中看到
             if "timed out" in str(e).lower():
                 status = "TOUT"
+            else:
+                status = "ERR"
             print(f"❌ 查詢地址 {address} 發生錯誤: {e}", file=sys.stderr)
             return status
 
     # ========================
     # 🏃 主輪詢迴圈
     # ========================
-
     def start_polling(self):
         """ 啟動輪詢與發佈的無限迴圈 """
 
@@ -330,6 +330,7 @@ class MPPTPoller:
                 for i, slave_id in enumerate(self.slave_ids_to_poll):
 
                     status = self._query_and_publish(slave_id)
+                    # ✅ 即使是 TOUT / ERR 也會被記錄下來
                     device_statuses.append(f"({slave_id}:{status})")
 
                     # 3. 控制設備間間隔 (避免 Modbus 衝突)
@@ -339,13 +340,15 @@ class MPPTPoller:
                 cycle_elapsed_time = time.time() - cycle_start_time
                 time_to_wait = self.total_poll_interval - cycle_elapsed_time
 
-                # ✅ 精簡 Info 日誌：顯示輪詢結果 + 下一輪倒數
+                # ✅ 不管 debug_mode true/false 都會印這一行
                 if time_to_wait > 0:
-                    print(f"📊 輪詢結果: {' '.join(device_statuses)} | 下一輪 {time_to_wait:.2f} 秒後")
+                    print(f"[INFO] 輪詢結果: {' '.join(device_statuses)} | 下一輪 {time_to_wait:.2f} 秒後")
                     time.sleep(max(time_to_wait, 0))
                 else:
                     # 耗時超出週期，立即下一輪，但避免 CPU 100%
-                    print(f"📊 輪詢結果: {' '.join(device_statuses)} | 警告：本輪耗時 {cycle_elapsed_time:.2f}s 超過設定週期 {self.total_poll_interval}s，立即開始下一輪。")
+                    print(
+                        f"[INFO] 輪詢結果: {' '.join(device_statuses)} | 警告：本輪耗時 {cycle_elapsed_time:.2f}s 超過設定週期 {self.total_poll_interval}s，立即開始下一輪。"
+                    )
                     time.sleep(1)
 
         except KeyboardInterrupt:
@@ -364,7 +367,6 @@ class MPPTPoller:
             except Exception:
                 pass
             print("清理完成。程式退出。")
-
 
 # ========================
 # 🔵 框架主進入點 (與 HA Add-on 框架兼容)
