@@ -22,7 +22,7 @@ def main():
     print(">>> 啟動 MPPT Modbus MQTT Poller <<<")
 
     # ✅ 剛啟動時先等待 10 秒，讓 MQTT / Modbus gateway / HA 都穩定
-    startup_delay = 20
+    startup_delay = 5
     print(f"⏳ 啟動延遲 {startup_delay} 秒，等待系統服務就緒...")
     time.sleep(startup_delay)
 
