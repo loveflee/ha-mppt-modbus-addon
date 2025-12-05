@@ -9,7 +9,7 @@ set -e
 OPTIONS_PATH="/data/options.json"
 CONFIG_PATH="/app/config.yaml"
 
-echo "--- [Init] Add-on 啟動中 (v1.7.2) ---"
+echo "--- [Init] Add-on 啟動中 ---"
 
 # 1. 檢查並載入設定
 if [ -f "$OPTIONS_PATH" ]; then
