@@ -23,7 +23,7 @@ options:
   discovery_prefix: "homeassistant"
 
   node_id: "wifi01"
-  device_name: "Ampinvt MPPT"
+  device_name: "ampinvt_mppt"
 
   poll_interval: 3
   delay_between_units: 0.5
