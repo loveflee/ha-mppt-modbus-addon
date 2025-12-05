@@ -1,8 +1,7 @@
 name: "Ampinvt MPPT Monitor"
-version: "1.5.0"
-slug: "ampinvt_mppt_monitor"
-description: "讀取 Ampinvt MPPT 控制器數據並透過 MQTT 發佈至 Home Assistant (穩定版 V1.5)"
-url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+version: "1.7.0"
+description: "讀取 Ampinvt MPPT 資料並發佈到 MQTT (修復版)"
+# ⚠️ 關鍵修正：移除了 slug 和 url 欄位，交由 HA 自動識別
 startup: services
 boot: auto
 arch:
@@ -10,29 +9,27 @@ arch:
   - amd64
   - armv7
 
-# ✅ 選項預設值 (使用者安裝後可在 HA Add-on 設定頁面修改)
+# 選項預設值
 options:
-  # Modbus Gateway 設定
   modbus_host: "192.168.106.12"
   modbus_port: 502
-  slave_ids: "1, 2, 3, 4, 5"       # 設備 ID 列表 (逗號分隔)
-  modbus_timeout: 3.0              # 讀取超時秒數
+  slave_ids: "1, 2, 3, 4, 5"
+  modbus_timeout: 3.0
   
-  # MQTT 設定
-  mqtt_host: "core-mosquitto"      # 預設連線 HA 內建 MQTT
+  mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
   discovery_prefix: "homeassistant"
-  node_id: "wifi01"            # MQTT 節點 ID
-  device_name: "ampinvt_mppt"      # HA 顯示名稱前綴
   
-  # 輪詢策略
-  poll_interval: 3                 # 每一輪掃描後的休息秒數
-  delay_between_units: 0.5         # 設備間隔秒數
-  debug_mode: false                # 是否開啟除錯日誌
+  node_id: "wifi01"
+  device_name: "Ampinvt MPPT"
+  
+  poll_interval: 3
+  delay_between_units: 0.5
+  debug_mode: false
 
-# ✅ 選項格式驗證 (Schema)
+# 參數驗證
 schema:
   modbus_host: str
   modbus_port: port
@@ -51,6 +48,6 @@ schema:
   delay_between_units: float
   debug_mode: bool
 
-# 權限與對映
+# 權限
 map:
   - config:rw
