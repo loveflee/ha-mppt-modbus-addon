@@ -24,8 +24,8 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   discovery_prefix: "homeassistant"
-  node_id: "ampinvt_gw"            # MQTT 節點 ID
-  device_name: "Ampinvt MPPT"      # HA 顯示名稱前綴
+  node_id: "wifi01"            # MQTT 節點 ID
+  device_name: "ampinvt_mppt"      # HA 顯示名稱前綴
   
   # 輪詢策略
   poll_interval: 3                 # 每一輪掃描後的休息秒數
