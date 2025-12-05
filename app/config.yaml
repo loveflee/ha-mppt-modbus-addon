@@ -1,6 +1,6 @@
 name: "MPPT Modbus MQTT Add-on"
 slug: "ampinvt_mppt_modbus"        # ✅ 這一行一定要有
-version: "1.7.0"
+version: "1.7.1"
 description: "讀取 Ampinvt MPPT 資料並發佈到 MQTT"
 startup: services
 boot: auto
