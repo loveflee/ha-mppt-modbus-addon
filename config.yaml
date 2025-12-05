@@ -1,62 +1,56 @@
-#config.yaml
-name: "MPPT Modbus MQTT Poller"
-version: "1.0.2"
-slug: "mppt_modbus_mqtt_poller"
-description: "透過 Modbus gateway 讀取 MPPT 資料並發佈到 MQTT，提供給 Home Assistant 使用。"
+name: "Ampinvt MPPT Monitor"
+version: "1.5.0"
+slug: "ampinvt_mppt_monitor"
+description: "讀取 Ampinvt MPPT 控制器數據並透過 MQTT 發佈至 Home Assistant (工業級穩定版 V1.5)"
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
-documentation: "https://github.com/loveflee/ha-mppt-modbus-addon"
+startup: services
+boot: auto
 arch:
+  - aarch64
   - amd64
   - armv7
-  - aarch64
-startup: services          # 跟隨 HA 服務啟動
-boot: auto                 # HA 開機時自動啟動
 
-# ✅ 可以在 HA UI 修改的參數（會寫到 /data/options.json）
+# ✅ 選項預設值 (使用者安裝後可在 HA Add-on 設定頁面修改)
 options:
-  modbus_host: "modbus_gatway_ip"   # 串口伺服器 / MPPT Modbus TCP Server IP
-  modbus_port: 502                  # Modbus TCP port
-
-  mqtt_host: "core-mosquitto"       # MQTT Broker IP（通常就是 HA 的 IP）
+  # Modbus Gateway 設定
+  modbus_host: "192.168.106.12"
+  modbus_port: 502
+  slave_ids: "1, 2, 3, 4, 5"       # 設備 ID 列表 (逗號分隔)
+  modbus_timeout: 3.0              # 讀取超時秒數
+  
+  # MQTT 設定
+  mqtt_host: "core-mosquitto"      # 預設連線 HA 內建 MQTT
   mqtt_port: 1883
-  mqtt_username: "add new user in ha"
-  mqtt_password: "only Local network can login"
+  mqtt_username: ""
+  mqtt_password: ""
+  discovery_prefix: "homeassistant"
+  node_id: "ampinvt_gw"            # MQTT 節點 ID
+  device_name: "Ampinvt MPPT"      # HA 顯示名稱前綴
+  
+  # 輪詢策略
+  poll_interval: 3                 # 每一輪掃描後的休息秒數
+  delay_between_units: 0.5         # 設備間隔秒數
+  debug_mode: false                # 是否開啟除錯日誌
 
-  slave_ids: "1,2,3,4,5"            # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
-  poll_interval_seconds: 20         # 輪詢間隔秒數
-  device_delay_ms: 1000             # 每台設備間隔，毫秒
-
-  node_id: "wifi01"                 # 在 HA 中當作此 Node 的識別
-  module_name: "ampinvt_mppt"       # module 名，方便未來擴充
-
-  latitude: 24.15                   # 位置，用於日出/日落等邏輯（如有）
-  longitude: 120.67
-
-  timezone: "Asia/Taipei"           # ✅ 新增：時區設定，預設台北時間
-  debug_mode: false                 # ✅ 新增：除錯模式，true 時會印 Modbus TX/RX HEX
-
-# ✅ options 型別定義（HA UI 驗證用）
+# ✅ 選項格式驗證 (Schema)
 schema:
   modbus_host: str
-  modbus_port: int
+  modbus_port: port
+  slave_ids: str
+  modbus_timeout: float
+  
   mqtt_host: str
-  mqtt_port: int
+  mqtt_port: port
   mqtt_username: str
   mqtt_password: str
-  slave_ids: str
-  poll_interval_seconds: int
-  device_delay_ms: int
+  discovery_prefix: str
   node_id: str
-  module_name: str
-  latitude: float
-  longitude: float
-  timezone: str
+  device_name: str
+  
+  poll_interval: int
+  delay_between_units: float
   debug_mode: bool
 
-# 不用 environment，run.sh 會自己讀 /data/options.json
+# 權限與對映
 map:
   - config:rw
-  - share:rw
-  - ssl:ro
-
-ports: {}
