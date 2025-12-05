@@ -1,4 +1,4 @@
-name: "Ampinvt MPPT Monitor"
+name: "MPPT Modbus MQTT Add-on"
 version: "1.7.0"
 description: "讀取 Ampinvt MPPT 資料並發佈到 MQTT (修復版)"
 # ⚠️ 關鍵修正：移除了 slug 和 url 欄位，交由 HA 自動識別
