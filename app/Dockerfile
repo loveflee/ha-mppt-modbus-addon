@@ -4,22 +4,33 @@ FROM python:3.11-slim
 # 設定容器內的工作目錄
 WORKDIR /app
 
-# 安裝系統依賴 (jq 用於處理 options.json)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    jq \
-    tzdata \
+# 安裝 tzdata + jq
+# - tzdata：處理時區
+# - jq：從 /data/options.json 讀 HA Add-on 設定
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        tzdata jq \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 Python 依賴
-RUN pip install --no-cache-dir paho-mqtt pyyaml pymodbus
+# 複製 requirements，並安裝依賴
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 1. 先複製啟動腳本並給予權限
-COPY run.sh /app/
-RUN chmod +x /app/run.sh
+# 複製 Python 程式碼到 image 裡的 /app
+COPY app /app
 
-# 2. 複製所有 Python 程式碼
-# 注意：這會把當前目錄下所有 .py 檔複製到容器的 /app/
-COPY *.py /app/
+# 複製 run.sh 到 /usr/local/bin，並給予執行權限
+COPY run.sh /usr/local/bin/run.sh
+RUN chmod +x /usr/local/bin/run.sh
 
-# 設定啟動指令
-CMD ["/app/run.sh"]
+# 預設時區（可被容器環境變數 TZ 覆蓋）
+ENV TZ=Asia/Taipei
+
+# 啟動指令：執行 run.sh
+CMD ["/usr/local/bin/run.sh"]
+
+# 預設時區（仍可以透過容器環境變數或 Add-on options 覆蓋）
+ENV TZ=Asia/Taipei
+
+# 啟動指令：執行 run.sh
+CMD ["/usr/local/bin/run.sh"]
