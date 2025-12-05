@@ -1,7 +1,7 @@
 name: "Ampinvt MPPT Monitor"
 version: "1.5.0"
 slug: "ampinvt_mppt_monitor"
-description: "讀取 Ampinvt MPPT 控制器數據並透過 MQTT 發佈至 Home Assistant (工業級穩定版 V1.5)"
+description: "讀取 Ampinvt MPPT 控制器數據並透過 MQTT 發佈至 Home Assistant (穩定版 V1.5)"
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
 startup: services
 boot: auto
