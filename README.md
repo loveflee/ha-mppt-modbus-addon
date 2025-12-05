@@ -36,7 +36,7 @@ MQTT Broker (例如 HA 內建的 Mosquitto broker)。</br>
 參數</br>
 說明</br>
 範例</br>
-```
+</br></br>
 modbus_host</br>
 RS485 轉接器的 IP 地址</br>
 192.168.1.100</br>
@@ -67,7 +67,7 @@ delay_between_units</br>
 debug_mode</br>
 是否開啟詳細日誌 (會顯示 Hex 數據)</br>
 false</br>
-```
+</br></br></br>
 ⚠️ 常見問題 (FAQ)</br>
 Q1: 為什麼日誌顯示 "Length Error" 或連線超時？</br>
 請檢查您的 RS485 轉接器設定。務必確認 Baud Rate (波特率) 與 MPPT 設定一致 (預設通常是 9600)，且模式為 None (無校驗), 8 Data bits, 1 Stop bit。
