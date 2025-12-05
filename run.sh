@@ -1,64 +1,90 @@
 #!/usr/bin/env bash
-# run.sh
-# 啟動 HA Add-on 用的 shell script
+# ==============================================================================
+# 🚀 Home Assistant Add-on 啟動腳本 (run.sh)
+# 
+# 功能：
+# 1. 讀取 /data/options.json (使用者在 HA 網頁設定的參數)
+# 2. 使用 jq 動態生成 /app/config.yaml (Python 程式需要的設定檔)
+# 3. 處理 slave_ids 字串轉換為 JSON 陣列
+# 4. 啟動 Python 主程式
+# ==============================================================================
 
 set -e
 
-# 確保在 /app 執行
-cd /app
+# 定義路徑
+OPTIONS_PATH="/data/options.json"
+CONFIG_PATH="/app/config.yaml"
 
-# 從 HA Add-on 的 /data/options.json 載入設定
-if [ -f /data/options.json ]; then
-  echo "--- 從 /data/options.json 載入設定 ---"
+echo "--- [Init] 正在初始化 Ampinvt MPPT Monitor ---"
 
-  export MODBUS_HOST=$(jq -r '.modbus_host' /data/options.json)
-  export MODBUS_PORT=$(jq -r '.modbus_port' /data/options.json)
-
-  export MQTT_BROKER_HOST=$(jq -r '.mqtt_host' /data/options.json)
-  export MQTT_PORT=$(jq -r '.mqtt_port' /data/options.json)
-  export MQTT_USERNAME=$(jq -r '.mqtt_username' /data/options.json)
-  export MQTT_PASSWORD=$(jq -r '.mqtt_password' /data/options.json)
-
-  export SLAVE_IDS=$(jq -r '.slave_ids' /data/options.json)
-  export POLL_INTERVAL_SECONDS=$(jq -r '.poll_interval_seconds' /data/options.json)
-  export DEVICE_DELAY_MS=$(jq -r '.device_delay_ms' /data/options.json)
-
-  export NODE_ID=$(jq -r '.node_id' /data/options.json)
-  export MODULE_NAME=$(jq -r '.module_name' /data/options.json)
-
-  export LATITUDE=$(jq -r '.latitude' /data/options.json)
-  export LONGITUDE=$(jq -r '.longitude' /data/options.json)
-
-  # ✅ 新增：讀取時區與除錯模式
-  export TIMEZONE=$(jq -r '.timezone // "Asia/Taipei"' /data/options.json)
-  export DEBUG_MODE=$(jq -r '.debug_mode // false' /data/options.json)
+# 檢查 options.json 是否存在 (本地測試時可能不存在)
+if [ ! -f "$OPTIONS_PATH" ]; then
+    echo "⚠️  警告：找不到 $OPTIONS_PATH，將使用預設 config.yaml 或環境變數"
 else
-  echo "[ERROR] 找不到 /data/options.json，無法載入設定" >&2
+    echo "⚙️  正在從 HA Add-on 設定生成 config.yaml..."
+
+    # 1. 讀取基礎參數
+    MODBUS_HOST=$(jq -r '.modbus_host' $OPTIONS_PATH)
+    MODBUS_PORT=$(jq -r '.modbus_port' $OPTIONS_PATH)
+    MODBUS_TIMEOUT=$(jq -r '.modbus_timeout // 3.0' $OPTIONS_PATH)
+    
+    # 2. 處理 Slave IDs (將字串 "1,2,3" 轉換為 JSON 陣列 [1,2,3])
+    # 如果輸入為空，預設為 [1]
+    SLAVE_IDS=$(jq -r '.slave_ids' $OPTIONS_PATH | jq -R 'split(",") | map(select(length>0) | tonumber) | if length==0 then [1] else . end')
+
+    MQTT_HOST=$(jq -r '.mqtt_host' $OPTIONS_PATH)
+    MQTT_PORT=$(jq -r '.mqtt_port' $OPTIONS_PATH)
+    MQTT_USER=$(jq -r '.mqtt_username // ""' $OPTIONS_PATH)
+    MQTT_PASS=$(jq -r '.mqtt_password // ""' $OPTIONS_PATH)
+    DISC_PREFIX=$(jq -r '.discovery_prefix // "homeassistant"' $OPTIONS_PATH)
+    NODE_ID=$(jq -r '.node_id // "ampinvt_gw"' $OPTIONS_PATH)
+    DEV_NAME=$(jq -r '.device_name // "Ampinvt MPPT"' $OPTIONS_PATH)
+
+    POLL_INT=$(jq -r '.poll_interval // 3' $OPTIONS_PATH)
+    DELAY_UNIT=$(jq -r '.delay_between_units // 0.5' $OPTIONS_PATH)
+    DEBUG_MODE=$(jq -r '.debug_mode // false' $OPTIONS_PATH)
+
+    # 3. 生成 config.yaml
+    # 注意：YAML 兼容 JSON 格式的陣列寫法，所以 SLAVE_IDS 直接填入即可
+    cat > "$CONFIG_PATH" <<EOF
+system:
+  debug: $DEBUG_MODE
+
+modbus:
+  host: "$MODBUS_HOST"
+  port: $MODBUS_PORT
+  unit_ids: $SLAVE_IDS
+  timeout: $MODBUS_TIMEOUT
+  retry_delay: 5.0
+
+mqtt:
+  broker: "$MQTT_HOST"
+  port: $MQTT_PORT
+  username: "$MQTT_USER"
+  password: "$MQTT_PASS"
+  discovery_prefix: "$DISC_PREFIX"
+  node_id: "$NODE_ID"
+  device_name: "$DEV_NAME"
+
+polling:
+  poll_interval: $POLL_INT
+  delay_between_units: $DELAY_UNIT
+EOF
+
+    echo "✅ config.yaml 生成完畢！內容預覽："
+    # 遮蔽密碼後顯示內容
+    sed 's/password: ".*"/password: "***"/' "$CONFIG_PATH"
 fi
 
-# 額外 debug：顯示目前目錄與內容
-echo "當前工作目錄：$(pwd)"
-echo "目錄內容："
-ls -al
-
-# 檢查 ampinvt_mppt.py 是否存在
-if [ ! -f "ampinvt_mppt.py" ]; then
-  echo "[ERROR] /app/ampinvt_mppt.py 不存在，無法啟動程式" >&2
-  exit 1
+# 4. 檢查 Python 腳本是否存在
+if [ ! -f "/app/main.py" ]; then
+    echo "❌ 錯誤：找不到 /app/main.py，請檢查 Docker Image 建置是否正確。"
+    exit 1
 fi
 
-# 設定時區（優先使用 options.json 中的 timezone）
-if [ -n "${TIMEZONE}" ]; then
-  export TZ="${TIMEZONE}"
-fi
+echo "--------------------------------------------------------"
+echo "🚀 啟動 Python 主程式..."
+echo "--------------------------------------------------------"
 
-echo "--- 正在啟動 MPPT Modbus Poller ---"
-echo "MQTT Broker: ${MQTT_BROKER_HOST}:${MQTT_PORT}"
-echo "Modbus Server: ${MODBUS_HOST}:${MODBUS_PORT}"
-echo "Slave IDs to poll: ${SLAVE_IDS}"
-echo "HA Node ID: ${NODE_ID}"
-echo "Timezone: ${TZ}"
-echo "Debug mode: ${DEBUG_MODE}"
-
-# 執行主程式
-python3 /app/main.py
+# 執行 Python (使用 -u 參數確保日誌不被緩衝，即時輸出到 HA Console)
+exec python3 -u /app/main.py

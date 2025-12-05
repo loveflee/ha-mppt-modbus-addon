@@ -1,0 +1,22 @@
+system:
+  debug: false
+
+modbus:
+  host: "192.168.106.12"
+  port: 502
+  unit_ids: [1, 2, 3, 4, 5]
+  timeout: 3.0
+  retry_delay: 2.0
+
+mqtt:
+  broker: "192.168.106.5"  # 請修改您的 MQTT Broker IP
+  port: 1883
+  username: "mqtt"      # 若無帳密請留空
+  password: "mqtt"
+  discovery_prefix: "homeassistant"
+  node_id: "wifi01"
+  device_name: "ampinvt_mppt"
+
+polling:
+  poll_interval: 3           # 輪詢休息時間 (秒)
+  delay_between_units: 0.5   # 設備間隔 (秒)
