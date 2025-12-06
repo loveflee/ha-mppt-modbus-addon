@@ -19,7 +19,7 @@ options:
   debug: false
 
   modbus:
-    host: "modbus gateway ip"
+    host: "192.168.106.12"
     port: 502
     unit_ids: [1, 2, 3, 4, 5]
     timeout: 3.0
@@ -28,25 +28,25 @@ options:
   mqtt:
     broker: "core-mosquitto"
     port: 1883
-    username: "user"
-    password: "password"
+    username: "mqtt"
+    password: "mqtt"
     discovery_prefix: "homeassistant"
     node_id: "wifi01"
     device_name: "ampinvt_mppt"
 
-polling:
-  poll_interval: 3           # 輪詢休息時間 (秒)
-  delay_between_units: 0.5   # 設備間隔 (秒)
+  polling:
+    poll_interval: 3
+    delay_between_units: 0.5
 
-
-# ✅ HA UI 驗證規則（⚠️ 結構必須與 options 完全一致）
+# ✅ HA UI 驗證規則（✅ 已完全對齊 options）
 schema:
   debug: bool
 
   modbus:
     host: str
     port: int
-    unit_ids: str
+    unit_ids:
+      - int
     timeout: float
     retry_delay: float
 
