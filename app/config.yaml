@@ -1,5 +1,5 @@
 name: "MPPT Modbus MQTT Poller"
-version: "2.01"
+version: "2.02"
 slug: "mppt_modbus_mqtt_poller"
 description: "透過 Modbus gateway 讀取 Ampinvt MPPT 資料並發佈到 MQTT，支援雙向控制與參數設定。"
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
