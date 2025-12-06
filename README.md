@@ -1,27 +1,36 @@
 Ampinvt MPPT Solar Controller Monitor (Home Assistant Add-on)</br>
-Home Assistant 的 Add-on，用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br>
-它透過 Modbus gateway (串口服務器) 讀取ampinvt mppt數據，並利用 MQTT Discovery 自動將感測器註冊到 Home Assistant，無需手動編寫 YAML 設定</br>
+Home Assistant 的 Add-on，用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br></br>
+
+透過 Modbus gateway (串口服務器) 讀取ampinvt mppt數據，</br>
+並利用 MQTT Discovery 自動將感測器註冊到 Home Assistant，無需手動編寫 YAML 設定</br></br>
+
 ✨ 主要功能</br>
-🚀 連線穩定性：</br>
-內建 TCP 封包重組機制 (_recv_fixed)，解決 WiFi/RS485 傳輸過程中的封包碎片化 (Fragmentation) 問題</br>
+🚀 內建 TCP 封包重組機制 (_recv_fixed)，</br>
+解決 WiFi/RS485 傳輸過程中的封包碎片化 (Fragmentation) 問題</br>
 自動髒數據清洗 (Flush Buffer)，防止讀取到過期的錯誤數值</br>
-支援斷線自動重連與 MQTT Last Will (LWT) 狀態監控</br>
+支援斷線自動重連與 MQTT Last Will (LWT) 狀態監控</br></br>
+
 📊 完整數據監控：</br>
 支援 0xB1 全參數協議 (93 Bytes)，數據完整</br>
 自動計算瞬時功率 (Watts = V * I)</br>
 監控 PV 電壓、電池電壓、電流、溫度、日發電量、總發電量</br>
-即時顯示錯誤狀態 (過壓、過溫、過充等)</br>
+即時顯示錯誤狀態 (過壓、過溫、過充等)</br></br>
+
 ⚙️ 遠端控制與設定</br>
 支援透過 HA 介面遠端開關負載 (Load ON/OFF)</br>
 可調整充電參數 (如：電池類型、均充/浮充電壓、限流設定)</br>
 🔌 支援讀取多台mppt設備</br>
-單一 Add-on 可輪詢多台 MPPT (透過 unit_ids 設定，例如 1, 2, 3或單台1)</br>
+單一 Add-on 可輪詢多台 MPPT (透過 unit_ids 設定，例如 1, 2, 3或單台1)</br></br>
+
 🛠️ 硬體需求</br>
 Ampinvt MPPT 控制器 v1.1 (確認支援 RS485 通訊)。</br>
-RS485 轉 乙太網/WiFi 模組 (例如：Elfin EW11, USR-TCP232 等)</br>
-⚠️ 重要設定：模組必須設定為 TCP Server 模式，並且開啟 透明傳輸 (Transparent Mode)。</br>
+RS485 轉 乙太網/WiFi 模組 (例如：Elfin EW11, USR-TCP232 等)</br></br>
+
+⚠️ 重要設定：模組必須設定為 TCP Server 模式，並且開啟 透明傳輸 (Transparent Mode)。</br></br>
+
 Home Assistant (OS 或 Supervised 版本，需支援 Add-on Store)。</br>
-MQTT Broker (HA 附加元件內建 Mosquitto broker)。</br>
+MQTT Broker (HA 附加元件內建 Mosquitto broker)。</br></br>
+
 📥 安裝步驟</br>
 在 Home Assistant 中，前往 設定 > Add-ons > Add-on Store。</br>
 點擊右上角的三個點 ... > 管理儲存庫(Repositories)</br>
