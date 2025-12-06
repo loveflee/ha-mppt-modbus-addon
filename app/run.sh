@@ -15,26 +15,34 @@ echo "--- [Init] Add-on 啟動中 ---"
 if [ -f "$OPTIONS_PATH" ]; then
     echo "⚙️  讀取 HA 設定 (/data/options.json)..."
     
-    # 讀取基礎參數 (使用 jq -r 去除引號)
-    MODBUS_HOST=$(jq -r '.modbus_host // "192.168.106.12"' $OPTIONS_PATH)
-    MODBUS_PORT=$(jq -r '.modbus_port // 502' $OPTIONS_PATH)
-    MODBUS_TIMEOUT=$(jq -r '.modbus_timeout // 3.0' $OPTIONS_PATH)
-    
-    # 處理 Slave IDs: 將 "1,2,3" 轉為 JSON 陣列 [1,2,3]
-    SLAVE_IDS=$(jq -r '.slave_ids' $OPTIONS_PATH | jq -R 'split(",") | map(select(length>0) | tonumber) | if length==0 then [1] else . end')
+    # Debug: 印出原始 JSON 結構以供除錯 (可選)
+    # cat $OPTIONS_PATH
 
-    MQTT_HOST=$(jq -r '.mqtt_host // "core-mosquitto"' $OPTIONS_PATH)
-    MQTT_PORT=$(jq -r '.mqtt_port // 1883' $OPTIONS_PATH)
-    MQTT_USER=$(jq -r '.mqtt_username // ""' $OPTIONS_PATH)
-    MQTT_PASS=$(jq -r '.mqtt_password // ""' $OPTIONS_PATH)
-    DISC_PREFIX=$(jq -r '.discovery_prefix // "homeassistant"' $OPTIONS_PATH)
+    # 讀取 Modbus 參數 (注意：路徑必須對應 config.yaml 的巢狀結構)
+    MODBUS_HOST=$(jq -r '.modbus.host // "192.168.106.12"' $OPTIONS_PATH)
+    MODBUS_PORT=$(jq -r '.modbus.port // 502' $OPTIONS_PATH)
+    MODBUS_TIMEOUT=$(jq -r '.modbus.timeout // 3.0' $OPTIONS_PATH)
+    RETRY_DELAY=$(jq -r '.modbus.retry_delay // 2.0' $OPTIONS_PATH)
     
-    NODE_ID=$(jq -r '.node_id // "wifi01"' $OPTIONS_PATH)
-    DEV_NAME=$(jq -r '.device_name // "Ampinvt MPPT"' $OPTIONS_PATH)
+    # 處理 Unit IDs: 從字串 "1,2,3" 轉為 JSON 陣列 [1,2,3]
+    # 這裡讀取的是 .modbus.unit_ids
+    SLAVE_IDS=$(jq -r '.modbus.unit_ids' $OPTIONS_PATH | jq -R 'split(",") | map(select(length>0) | tonumber) | if length==0 then [1] else . end')
 
-    POLL_INT=$(jq -r '.poll_interval // 3' $OPTIONS_PATH)
-    DELAY_UNIT=$(jq -r '.delay_between_units // 0.5' $OPTIONS_PATH)
-    DEBUG_MODE=$(jq -r '.debug_mode // false' $OPTIONS_PATH)
+    # 讀取 MQTT 參數
+    MQTT_HOST=$(jq -r '.mqtt.broker // "core-mosquitto"' $OPTIONS_PATH)
+    MQTT_PORT=$(jq -r '.mqtt.port // 1883' $OPTIONS_PATH)
+    MQTT_USER=$(jq -r '.mqtt.username // ""' $OPTIONS_PATH)
+    MQTT_PASS=$(jq -r '.mqtt.password // ""' $OPTIONS_PATH)
+    DISC_PREFIX=$(jq -r '.mqtt.discovery_prefix // "homeassistant"' $OPTIONS_PATH)
+    NODE_ID=$(jq -r '.mqtt.node_id // "wifi01"' $OPTIONS_PATH)
+    DEV_NAME=$(jq -r '.mqtt.device_name // "Ampinvt MPPT"' $OPTIONS_PATH)
+
+    # 讀取 Polling 參數
+    POLL_INT=$(jq -r '.polling.poll_interval // 3' $OPTIONS_PATH)
+    DELAY_UNIT=$(jq -r '.polling.delay_between_units // 0.5' $OPTIONS_PATH)
+    
+    # 讀取 Debug 參數
+    DEBUG_MODE=$(jq -r '.debug // false' $OPTIONS_PATH)
 
     # 2. 動態生成 config.yaml 給 Python 使用
     echo "📄 生成 /app/config.yaml..."
@@ -47,7 +55,7 @@ modbus:
   port: $MODBUS_PORT
   unit_ids: $SLAVE_IDS
   timeout: $MODBUS_TIMEOUT
-  retry_delay: 5.0
+  retry_delay: $RETRY_DELAY
 
 mqtt:
   broker: "$MQTT_HOST"
