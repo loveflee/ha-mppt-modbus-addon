@@ -71,9 +71,7 @@ poll_interval</br>
 delay_between_units</br>
 多台設備輪詢時的間隔秒數</br>
 0.5</br>
-debug_mode</br>
-是否開啟詳細日誌 (會顯示 Hex 數據)</br>
-false</br>
+
 </br></br></br>
 ⚠️ 常見問題 (FAQ)</br>
 Q1: 為什麼日誌顯示 "Length Error" 或連線超時？</br>
