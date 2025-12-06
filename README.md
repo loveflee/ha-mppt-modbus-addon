@@ -46,7 +46,7 @@ slave_ids</br>
 MPPT 設備 ID (支援單台或多台，用逗號分隔)</br>
 (mppt設備的地址address)</br>
 單台:</br>
-1
+1</br>
 多台:</br>
 1, 2, 3, 4, 5</br></br>
 
