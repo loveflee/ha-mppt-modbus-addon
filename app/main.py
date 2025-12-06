@@ -1,103 +1,186 @@
 import time
 import yaml
+import signal
 import sys
-import struct
-from typing import Dict, Any, List
 import mppt_register_map as rmap
-from modbus_client import ModbusClient
-from mqtt_client import HomeAssistantMQTT
+from core_tcp import RobustTCPClient
+from core_mqtt import RobustMQTTClient
+from ampinvt_proto import AmpinvtProtocol
+from ha_manager import HAManager
 
-def decode_mppt_data(raw_bytes: bytes, map_list: List[Dict], is_bits_map: bool = False) -> Dict[str, Any]:
-    result = {}
-    if is_bits_map:
-        for key, info in map_list.items():
-            byte_idx = info['byte']
-            bit_idx = info['bit']
-            if byte_idx < len(raw_bytes):
-                is_on = bool((raw_bytes[byte_idx] >> bit_idx) & 0x01)
-                result[key] = "ON" if is_on else "OFF"
-        return result
+# 全域變數以便 Signal Handler 存取
+mqtt_client = None
+ha_mgr = None
+app_config = None
 
-    for item in map_list:
-        key = item['key']
-        offset = item['offset']
-        length = item['length']
-        scale = item['scale']
-        is_signed = item['signed']
-
-        if offset + length > len(raw_bytes): continue
-        chunk = raw_bytes[offset : offset + length]
-        val = 0
-        try:
-            if length == 1: val = chunk[0]
-            elif length == 2:
-                fmt = '>h' if is_signed else '>H'
-                val = struct.unpack(fmt, chunk)[0]
-            elif length == 4:
-                fmt = '>i' if is_signed else '>I'
-                val = struct.unpack(fmt, chunk)[0]
-            
-            if scale != 1: final_val = round(val / scale, 2)
-            else: final_val = val
-            result[key] = final_val
-        except Exception as e:
-            # 只有在除錯模式下才印出解析錯誤，保持日誌乾淨
-            pass 
-    return result
-
-def load_config(path="config.yaml") -> dict:
+def load_config():
     try:
-        with open(path, "r", encoding="utf-8") as f: return yaml.safe_load(f)
+        with open("config.yaml", "r") as f: return yaml.safe_load(f)
     except: return {}
 
+def graceful_exit(signum, frame):
+    """處理程式關閉訊號"""
+    print(f"\n🛑 收到終止訊號 ({signum})，準備關閉...")
+    
+    if app_config and ha_mgr and mqtt_client:
+        reset_on_exit = app_config.get('mqtt', {}).get('reset_discovery_on_exit', False)
+        
+        if reset_on_exit:
+            print("⚠️ 偵測到 reset_discovery_on_exit = True")
+            try:
+                unit_ids = app_config['modbus']['unit_ids']
+                ha_mgr.clear_all_discovery(unit_ids)
+                time.sleep(2)
+            except Exception as e:
+                print(f"❌ 清除過程發生錯誤: {e}")
+    
+    if mqtt_client:
+        print("🔌 斷開 MQTT 連線...")
+        
+    print("👋 Bye!")
+    sys.exit(0)
+
 def main():
-    cfg = load_config()
-    unit_ids = cfg.get('modbus', {}).get('unit_ids', [1])
-    poll_cfg = cfg.get('polling', {'poll_interval': 3, 'delay_between_units': 0.5})
+    global mqtt_client, ha_mgr, app_config
     
-    # ✅ 關鍵修復：正確讀取設定檔中的 debug 選項
-    system_cfg = cfg.get('system', {})
-    debug_mode = system_cfg.get('debug', False)
+    app_config = load_config()
+    modbus_cfg = app_config['modbus']
+    mqtt_cfg = app_config['mqtt']
     
-    print("==============================================")
-    print(f"🚀 啟動 MPPT 監控 (V1.7.1 Debug修復版)")
-    print(f"🎯 設備列表: {unit_ids}")
-    print(f"🛠  除錯模式: {'開啟 (會顯示 TX/RX)' if debug_mode else '關閉 (僅顯示關鍵訊息)'}")
-    print("==============================================\n")
+    # 註冊訊號監聽
+    signal.signal(signal.SIGINT, graceful_exit)
+    signal.signal(signal.SIGTERM, graceful_exit)
     
-    mqtt = HomeAssistantMQTT(cfg['mqtt'], unit_ids)
-    mqtt.connect()
+    print("🚀 啟動 MPPT 監控 (V3.1 增強 Select 解析)")
+
+    tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
+    mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
     
-    # ✅ 將讀取到的 debug_mode 傳入，而不是寫死 True
-    mb = ModbusClient(cfg['modbus'], debug=debug_mode)
-    
+    protocol = AmpinvtProtocol(tcp, debug=app_config['system']['debug'])
+    ha_mgr = HAManager(mqtt_client, mqtt_cfg)
+
+    def on_mqtt_ready():
+        ha_mgr.send_discovery(modbus_cfg['unit_ids'])
+        # 訂閱所有控制指令
+        topics = ["switch", "button", "number", "select"]
+        for t in topics:
+            mqtt_client.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
+        print(f"👂 已訂閱控制指令")
+
+    mqtt_client.on_connected_callback = on_mqtt_ready
+    mqtt_client.connect()
+
     while True:
         try:
-            while not mqtt.command_queue.empty():
-                cmd = mqtt.command_queue.get()
-                print(f"⚡ 執行指令: {cmd.name} -> {cmd.value}")
-                success = False
-                if cmd.cmd_type == "C0": success = mb.write_mppt_command(cmd.unit_id, cmd.code)
-                elif cmd.cmd_type == "D0": success = mb.write_mppt_setting(cmd.unit_id, cmd.code, cmd.value, cmd.data_len)
-                if success: time.sleep(1)
+            while not mqtt_client.msg_queue.empty():
+                msg = mqtt_client.msg_queue.get()
+                if isinstance(msg, dict):
+                    topic = msg.get('topic'); payload_raw = msg.get('payload')
+                else:
+                    topic = getattr(msg, 'topic', None); payload_raw = getattr(msg, 'payload', None)
 
-            for uid in unit_ids:
-                raw_b1 = mb.read_mppt_b1_full(uid)
-                if raw_b1 and len(raw_b1) == 93:
-                    data_vals = decode_mppt_data(raw_b1, rmap.B1_INFO)
-                    mqtt.publish_states(uid, data_vals, sub_topic="state_b1")
-                    data_bits = decode_mppt_data(raw_b1, rmap.B1_STATUS_BITS, is_bits_map=True)
-                    mqtt.publish_states(uid, data_bits, sub_topic="state_bits")
-                time.sleep(poll_cfg['delay_between_units'])
+                if not topic or payload_raw is None: continue
 
-            time.sleep(poll_cfg['poll_interval'])
+                # Payload 轉字串
+                if isinstance(payload_raw, bytes): payload = payload_raw.decode('utf-8').strip()
+                else: payload = str(payload_raw).strip()
 
-        except KeyboardInterrupt:
-            mb.close()
-            break
+                print(f"📩 收到指令 [{topic}]: {payload}")
+                
+                try:
+                    parts = topic.split('/') # .../domain/entity_base/key/set
+                    key = parts[-2]
+                    entity_base = parts[-3]
+                    domain = parts[-4]
+                    uid = int(entity_base.split('_')[-1])
+
+                    # 👉 處理 Switch
+                    if domain == "switch":
+                        switch_def = rmap.CONTROL_SWITCHES.get(key)
+                        if switch_def:
+                            cmd = switch_def['on_code'] if payload.upper()=="ON" else switch_def['off_code']
+                            protocol.write_c0_command(uid, cmd)
+
+                    # 👉 處理 Button
+                    elif domain == "button":
+                        btn_def = rmap.CONTROL_BUTTONS.get(key)
+                        if btn_def: protocol.write_c0_command(uid, btn_def['code'])
+
+                    # 👉 處理 Number
+                    elif domain == "number":
+                        target_item = None
+                        target_code = None
+                        for code, item in rmap.D0_PARAMS.items():
+                            if item['key'] == key:
+                                target_item = item; target_code = code; break
+                        
+                        if target_item:
+                            val = float(payload)
+                            print(f"👉 設定參數 [{key}] = {val}")
+                            protocol.write_d0_command(uid, target_code, val, target_item['scale'], target_item['valid_bytes'])
+
+                    # 👉 🟢 處理 Select (下拉選單 - 增強版)
+                    elif domain == "select":
+                        target_item = None
+                        target_code = None
+                        for code, item in rmap.D0_PARAMS.items():
+                            if item['key'] == key:
+                                target_item = item; target_code = code; break
+                        
+                        if target_item:
+                            map_dict = None
+                            for b1_item in rmap.B1_INFO:
+                                if b1_item['key'] == target_item['ha']['link_b1']:
+                                    map_dict = b1_item.get('map')
+                                    break
+                            
+                            if map_dict:
+                                int_val = None
+                                # 策略 1: 嘗試完全匹配 (Value -> Key)
+                                for k, v in map_dict.items():
+                                    if v == payload: 
+                                        int_val = k
+                                        break
+                                
+                                # 策略 2: 嘗試前綴 ID 解析 (例如 "3:鋰電池" -> 3)
+                                if int_val is None and ":" in payload:
+                                    try:
+                                        prefix = payload.split(':')[0]
+                                        if prefix.isdigit():
+                                            potential_id = int(prefix)
+                                            # 確認這個 ID 是否真的在 map 中
+                                            if potential_id in map_dict:
+                                                int_val = potential_id
+                                                print(f"ℹ️ 使用 ID 匹配: {payload} -> {int_val}")
+                                    except: pass
+
+                                if int_val is not None:
+                                    print(f"👉 設定模式 [{key}] = {payload} (Val={int_val})")
+                                    protocol.write_d0_command(uid, target_code, int_val, 1, target_item['valid_bytes'])
+                                else:
+                                    print(f"⚠️ 無法找到選項對應數值: {repr(payload)}")
+                                    print(f"   系統內的選項 Map: {map_dict}")
+
+                except Exception as e:
+                    print(f"⚠️ 指令執行錯誤: {e}")
+
         except Exception as e:
-            print(f"❌ 主迴圈錯誤: {e}")
-            time.sleep(5)
+            print(f"⚠️ MQTT Loop 錯誤: {e}")
+
+        # 輪詢數據
+        try:
+            for uid in modbus_cfg['unit_ids']:
+                raw_data = protocol.read_b1_data(uid)
+                if raw_data:
+                    vals = protocol.decode(raw_data, rmap.B1_INFO)
+                    bits = protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
+                    ha_mgr.publish_state(uid, vals, "state_b1")
+                    ha_mgr.publish_state(uid, bits, "state_bits")
+                time.sleep(app_config['polling']['delay_between_units'])
+        except Exception as e:
+            pass
+            
+        time.sleep(app_config['polling']['poll_interval'])
 
 if __name__ == "__main__":
     main()

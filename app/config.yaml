@@ -1,52 +1,23 @@
-name: "MPPT Modbus MQTT Add-on"
-slug: "ampinvt_mppt_modbus"        # ✅ 這一行一定要有
-version: "1.7.1"
-description: "讀取 Ampinvt MPPT 資料並發佈到 MQTT"
-startup: services
-boot: auto
+system:
+  debug: false
+#  debug: true
 
-arch:
-  - aarch64
-  - amd64
-  - armv7
+modbus:
+  host: "192.168.106.12"
+  port: 502
+  unit_ids: [1, 2, 3, 4, 5]
+  timeout: 3.0
+  retry_delay: 2.0
 
-options:
-  modbus_host: "192.168.106.12"
-  modbus_port: 502
-  slave_ids: "1, 2, 3, 4, 5"
-  modbus_timeout: 3.0
-
-  mqtt_host: "core-mosquitto"
-  mqtt_port: 1883
-  mqtt_username: ""
-  mqtt_password: ""
+mqtt:
+  broker: "192.168.106.5"  # 請修改您的 MQTT Broker IP
+  port: 1883
+  username: "mqtt"      # 若無帳密請留空
+  password: "mqtt"
   discovery_prefix: "homeassistant"
-
   node_id: "wifi01"
   device_name: "ampinvt_mppt"
 
-  poll_interval: 3
-  delay_between_units: 0.5
-  debug_mode: false
-
-schema:
-  modbus_host: str
-  modbus_port: port
-  slave_ids: str
-  modbus_timeout: float
-
-  mqtt_host: str
-  mqtt_port: port
-  mqtt_username: str
-  mqtt_password: str
-  discovery_prefix: str
-
-  node_id: str
-  device_name: str
-
-  poll_interval: int
-  delay_between_units: float
-  debug_mode: bool
-
-map:
-  - config:rw
+polling:
+  poll_interval: 3           # 輪詢休息時間 (秒)
+  delay_between_units: 0.5   # 設備間隔 (秒)
