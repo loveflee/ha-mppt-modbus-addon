@@ -78,6 +78,18 @@ Q2: 為什麼找不到實體 (Entity)？</br>
 Q3: 支援哪些型號？</br>
 測試於佛山金廣源 (Ampinvt) 60A MPPT 控制器 (黑色/藍色外殼版本)。</br>
 支援 V1.1 通訊協議 (指令 0xB1)。</br>
+瞬間總發電量 設定>裝置與服務>輔助工具>新增輔助工具>template>感測器 貼上 公式 測量單位:W
+```
+{% set mppt1 = states('sensor.mppt_kong_zhi_qi_1_jin_ri_fa_dian_liang') | float(0) %}
+{% set mppt2 = states('sensor.mppt_kong_zhi_qi_2_jin_ri_fa_dian_liang') | float(0) %}
+{% set mppt3 = states('sensor.mppt_kong_zhi_qi_3_jin_ri_fa_dian_liang') | float(0) %}
+{% set mppt4 = states('sensor.mppt_kong_zhi_qi_4_jin_ri_fa_dian_liang') | float(0) %}
+{% set mppt5 = states('sensor.mppt_kong_zhi_qi_5_jin_ri_fa_dian_liang') | float(0) %}
+
+{{ (mppt1 + mppt2 + mppt3 + mppt4 + mppt5) }}
+```
+
+
 
 建議日出重啟附加元件 </br>
 腳本
