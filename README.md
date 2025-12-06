@@ -30,7 +30,7 @@ MQTT Broker (例如 HA 內建的 Mosquitto broker)。</br>
 
 
 點擊 Add。</br>
-重新整理頁面，找到 "Ampinvt MPPT Monitor" 並點擊安裝。</br>
+重新整理頁面，找到 "MPPT Modbus MQTT Poller" 並點擊安裝。</br>
 ⚙️ 設定說明 (Configuration)</br>
 安裝後，請至 Add-on 的 Configuration 頁籤進行設定：</br>
 參數</br>
