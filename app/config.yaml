@@ -1,5 +1,5 @@
 name: "MPPT Modbus MQTT Poller"
-version: "2.1.0"
+version: "5.3.0"
 slug: "mppt_modbus_mqtt_poller"
 description: "透過 Modbus gateway 讀取 Ampinvt MPPT 資料並發佈到 MQTT，支援雙向控制與參數設定。"
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
@@ -20,7 +20,7 @@ options:
   timezone_offset: 8          # 🟢 新增：時區補償 (小時)
   reset_discovery_on_exit: false # 🟢 新增：結束時清除實體
   modbus:
-    host: "192.168.106.12"
+    host: "modbus gateway ip"
     port: 502
     unit_ids: "1, 2, 3, 4, 5" # 使用字串格式，方便使用者輸入
     timeout: 3.0
