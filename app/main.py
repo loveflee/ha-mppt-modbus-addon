@@ -51,7 +51,7 @@ def main():
     signal.signal(signal.SIGINT, graceful_exit)
     signal.signal(signal.SIGTERM, graceful_exit)
     
-    print("🚀 啟動 MPPT 監控 (V3.1 增強 Select 解析)")
+    print("🚀 啟動 MPPT 監控 (V2.0)")
 
     tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
     mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
