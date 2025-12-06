@@ -1,55 +1,54 @@
-#Ampinvt MPPT Solar Controller Monitor (Home Assistant Add-on)</br>
-這是一個專為 Home Assistant 設計的 Add-on，用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br>
-它透過 Modbus TCP (RS485 轉乙太網/WiFi) 讀取數據，並利用 MQTT Discovery 自動將感測器註冊到 Home Assistant，無需手動編寫 YAML 設定</br>
+Ampinvt MPPT Solar Controller Monitor (Home Assistant Add-on)</br>
+Home Assistant 的 Add-on，用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br>
+它透過 Modbus gateway (串口服務器) 讀取ampinvt mppt數據，並利用 MQTT Discovery 自動將感測器註冊到 Home Assistant，無需手動編寫 YAML 設定</br>
 ✨ 主要功能</br>
 🚀 連線穩定性：</br>
 內建 TCP 封包重組機制 (_recv_fixed)，解決 WiFi/RS485 傳輸過程中的封包碎片化 (Fragmentation) 問題</br>
 自動髒數據清洗 (Flush Buffer)，防止讀取到過期的錯誤數值</br>
 支援斷線自動重連與 MQTT Last Will (LWT) 狀態監控</br>
 📊 完整數據監控：</br>
-支援 0xB1 全參數協議 (93 Bytes)，數據最完整</br>
-自動計算瞬時功率 (Watts = V * I)，補足部分舊款韌體提供功率數據的問題</br>
+支援 0xB1 全參數協議 (93 Bytes)，數據完整</br>
+自動計算瞬時功率 (Watts = V * I)</br>
 監控 PV 電壓、電池電壓、電流、溫度、日發電量、總發電量</br>
 即時顯示錯誤狀態 (過壓、過溫、過充等)</br>
 ⚙️ 遠端控制與設定</br>
 支援透過 HA 介面遠端開關負載 (Load ON/OFF)</br>
 可調整充電參數 (如：電池類型、均充/浮充電壓、限流設定)</br>
-🔌 多設備支援</br>
-單一 Add-on 可輪詢多台 MPPT (透過 slave_ids 設定，例如 1, 2, 3)</br>
+🔌 支援讀取多台mppt設備</br>
+單一 Add-on 可輪詢多台 MPPT (透過 unit_ids 設定，例如 1, 2, 3或單台1)</br>
 🛠️ 硬體需求</br>
-Ampinvt MPPT 控制器 (確認支援 RS485 通訊)。</br>
-RS485 轉 乙太網/WiFi 模組 (例如：Elfin EW11, USR-TCP232 等)。</br>
+Ampinvt MPPT 控制器 v1.1 (確認支援 RS485 通訊)。</br>
+RS485 轉 乙太網/WiFi 模組 (例如：Elfin EW11, USR-TCP232 等)</br>
 ⚠️ 重要設定：模組必須設定為 TCP Server 模式，並且開啟 透明傳輸 (Transparent Mode)。</br>
 Home Assistant (OS 或 Supervised 版本，需支援 Add-on Store)。</br>
-MQTT Broker (例如 HA 內建的 Mosquitto broker)。</br>
+MQTT Broker (HA 附加元件內建 Mosquitto broker)。</br>
 📥 安裝步驟</br>
 在 Home Assistant 中，前往 設定 > Add-ons > Add-on Store。</br>
-點擊右上角的三個點 ... > Repositories。</br>
-輸入本專案的 GitHub 網址：</br>
+點擊右上角的三個點 ... > 管理儲存庫(Repositories)</br>
+添加入本專案的 GitHub 網址：</br>
 [https://github.com/loveflee/ha-mppt-modbus-addon](https://github.com/loveflee/ha-mppt-modbus-addon)</br>
 
 
 點擊 Add。</br>
-重新整理頁面，找到 "MPPT Modbus MQTT Poller" 並點擊安裝。</br>
+重新整理頁面，找到 "MPPT Modbus MQTT Poller" 點擊安裝</br>
 ⚙️ 設定說明 (Configuration)</br>
-安裝後，請至 Add-on 的 Configuration 頁籤進行設定：</br>
-參數</br>
-說明</br>
-範例</br>
-</br></br>
+安裝後，請至 Add-on 的 Configuration 頁面進行設定：</br>
+參數說明範例</br></br></br>
+
 modbus分頁</br>
 -------------------------------------</br>
 host</br>
 填入串口服務器ip:比如192.168.1.100</br></br>
 port</br>
 填入串口服務器port:502</br></br>
-slave_ids</br>
+unit_ids</br>
 MPPT 設備 ID (支援單台或多台，用逗號分隔)</br>
 (mppt設備的地址address)</br>
 單台:</br>
 1</br>
 多台:</br>
 1, 2, 3, 4, 5</br></br>
+
 
 mqtt分頁</br>
 -------------------------------------</br>
