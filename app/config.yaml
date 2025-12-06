@@ -1,0 +1,64 @@
+name: "MPPT Modbus MQTT Poller"
+version: "2.0.0"
+slug: "mppt_modbus_mqtt_poller"
+description: "透過 Modbus gateway 讀取 MPPT 資料並發佈到 MQTT，提供給 Home Assistant 使用。"
+url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+documentation: "https://github.com/loveflee/ha-mppt-modbus-addon"
+
+arch:
+  - amd64
+  - armv7
+  - aarch64
+
+startup: services
+boot: auto
+init: false
+
+# 預設 options
+options:
+  debug: false
+  modbus:
+    host: "192.168.106.12"
+    port: 502
+    unit_ids: "1, 2, 3, 4, 5"  # <--- 修正：必須是字串，符合下方的 schema: str
+    timeout: 3.0
+    retry_delay: 2.0
+  mqtt:
+    broker: "core-mosquitto"
+    port: 1883
+    username: "user"
+    password: "userpassword"
+    discovery_prefix: "homeassistant"
+    node_id: "wifi01"
+    device_name: "ampinvt_mppt"
+  polling:
+    poll_interval: 3
+    delay_between_units: 0.5
+
+# Schema 定義
+schema:
+  debug: bool
+  modbus:
+    host: str
+    port: int
+    unit_ids: str  # 使用字串輸入 "1, 2, 3"
+    timeout: float
+    retry_delay: float
+  mqtt:
+    broker: str
+    port: int
+    username: str
+    password: str
+    discovery_prefix: str
+    node_id: str
+    device_name: str
+  polling:
+    poll_interval: int
+    delay_between_units: float
+
+map:
+  - config:rw
+  - share:rw
+  - ssl:ro
+
+ports: {}
