@@ -2,13 +2,14 @@ import time
 import yaml
 import signal
 import sys
+from datetime import datetime, timedelta, timezone # 🟢 [NEW] 引入時間處理模組
 
 # 匯入我們自己寫的模組 (就像組裝積木一樣)
-import mppt_register_map as rmap       # 這是藏寶圖：告訴程式碼去哪裡讀電壓、電流
-from core_tcp import RobustTCPClient   # 這是電話機：負責打電話給 Modbus 設備
+import mppt_register_map as rmap        # 這是藏寶圖：告訴程式碼去哪裡讀電壓、電流
+from core_tcp import RobustTCPClient    # 這是電話機：負責打電話給 Modbus 設備
 from core_mqtt import RobustMQTTClient # 這是傳令兵：負責跟 Home Assistant 講話
 from ampinvt_proto import AmpinvtProtocol # 這是翻譯官：把 Hex 轉成人類看得懂的數字
-from ha_manager import HAManager       # 這是外交官：負責跟 HA 註冊裝置
+from ha_manager import HAManager        # 這是外交官：負責跟 HA 註冊裝置
 
 # --- 全域變數 (Global Variables) ---
 # 放在這裡是為了讓不同的函式 (例如關閉程式時) 都能存取到它們
@@ -75,6 +76,16 @@ def graceful_exit(signum, frame):
     print("👋 程式結束，Bye Bye!")
     sys.exit(0) # 0 代表「正常結束」，Docker 不會報錯
 
+# 🟢 [NEW] 新增取得當地時間的函式
+def get_local_time(offset_hours):
+    """
+    🌍 取得帶有時區補償的當地時間
+    Docker 預設是 UTC+0，我們需要加回台灣/當地時間 (例如 +8)
+    """
+    utc_now = datetime.now(timezone.utc)
+    local_dt = utc_now + timedelta(hours=offset_hours)
+    return local_dt
+
 def main():
     # 宣告我們要使用外面的全域變數
     global mqtt_client, ha_mgr, app_config
@@ -87,19 +98,23 @@ def main():
 
     modbus_cfg = app_config['modbus']
     mqtt_cfg = app_config['mqtt']
+    sys_cfg = app_config.get('system', {}) # 🟢 取得系統設定區塊
+    
+    # 🟢 [NEW] 讀取時區設定 (預設 +8 小時)
+    tz_offset = sys_cfg.get('timezone_offset', 8)
     
     # 2. 註冊監聽器：告訴系統，如果有人按 Ctrl+C，請執行 graceful_exit
     signal.signal(signal.SIGINT, graceful_exit)
     signal.signal(signal.SIGTERM, graceful_exit)
     
-    print("🚀 MPPT 監控系統啟動中 (V2.2 - 貼心註解版)")
+    print(f"🚀 MPPT 監控系統啟動中 (V4.6 - 時區同步版, 時區+{tz_offset})")
 
     # 3. 初始化各大核心模組 (建立物件)
     # 這裡只是把工具準備好，還沒開始工作
     tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
     mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
     
-    protocol = AmpinvtProtocol(tcp, debug=app_config['system'].get('debug', False))
+    protocol = AmpinvtProtocol(tcp, debug=sys_cfg.get('debug', False))
     ha_mgr = HAManager(mqtt_client, mqtt_cfg)
 
     # 4. 設定 MQTT 連線後的動作
@@ -119,8 +134,8 @@ def main():
     mqtt_client.connect() # 這裡才真正開始連線
 
     # --- 🐶 看門狗變數 ---
-    consecutive_errors = 0   
-    MAX_ERRORS = 20          # 容忍 20 次連續失敗 (大約 1 分鐘)
+    consecutive_errors = 0    
+    MAX_ERRORS = 20           # 容忍 20 次連續失敗 (大約 1 分鐘)
 
     # 5. 主迴圈 (程式的心臟)
     # 這裡會一直跑，直到世界末日或當機
@@ -168,7 +183,15 @@ def main():
                     # 👉 處理按鈕 (Button)
                     elif domain == "button":
                         btn_def = rmap.CONTROL_BUTTONS.get(key)
-                        if btn_def: protocol.write_c0_command(uid, btn_def['code'])
+                        if btn_def: 
+                            # 🟢 [NEW] 特殊判斷：如果是時間同步指令 (0xDF)
+                            if btn_def.get('code') == 0xDF:
+                                local_dt = get_local_time(tz_offset)
+                                print(f"👉 執行時間同步: {local_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                                protocol.write_time_sync(uid, local_dt)
+                            else:
+                                # 一般按鈕 (例如消音)
+                                protocol.write_c0_command(uid, btn_def['code'])
 
                     # 👉 處理數值滑桿 (Number) - 這裡用到 D0 指令
                     elif domain == "number":
