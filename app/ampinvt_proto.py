@@ -1,10 +1,11 @@
 import struct
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 from core_tcp import RobustTCPClient
 
 class AmpinvtProtocol:
     """
-    📦 協議層：V3.0 新增 D0 參數寫入功能
+    📦 協議層：V4.5 新增時間同步功能 (0xDF)
     """
     def __init__(self, tcp_client: RobustTCPClient, debug: bool = False):
         self.transport = tcp_client
@@ -22,7 +23,6 @@ class AmpinvtProtocol:
         return resp
 
     def write_c0_command(self, unit_id: int, control_code: int) -> bool:
-        """發送 C0 開關/按鈕指令"""
         req = bytearray([unit_id, 0xC0, control_code, 0x00, 0x00, 0x00, 0x00])
         req.append(self._calc_checksum(req))
         if self.debug: print(f"TX [{unit_id}] Write C0: {req.hex(' ')}")
@@ -31,35 +31,43 @@ class AmpinvtProtocol:
         return bool(resp and len(resp) == 8)
 
     def write_d0_command(self, unit_id: int, param_code: int, value: float, scale: float, valid_bytes: list) -> bool:
-        """🟢 [NEW] 發送 D0 參數設定指令"""
-        # 1. 數值縮放 (例如 14.5V -> 1450)
-        # scale 在 map 中是 0.01 (表示 raw*0.01=val)，所以寫入時要 val/scale
         int_val = int(round(value / scale))
-        
-        # 2. 建構封包 (預設全 0)
-        # Addr, D0, Code, D1, D2, D3, D4, Check
         req = bytearray([unit_id, 0xD0, param_code, 0x00, 0x00, 0x00, 0x00])
-        
-        # 3. 填入數據 (支援 1 Byte 或 2 Bytes)
         if len(valid_bytes) == 1:
-            # 單字節 (Byte 6)
-            idx = valid_bytes[0]
-            req[idx] = int_val & 0xFF
+            req[valid_bytes[0]] = int_val & 0xFF
         elif len(valid_bytes) == 2:
-            # 雙字節 (Byte 5 高, Byte 6 低)
             high_idx, low_idx = valid_bytes
             req[high_idx] = (int_val >> 8) & 0xFF
             req[low_idx] = int_val & 0xFF
-            
         req.append(self._calc_checksum(req))
         
-        if self.debug: print(f"TX [{unit_id}] Write D0 (Val={value}): {req.hex(' ')}")
+        if self.debug: print(f"TX [{unit_id}] Write D0: {req.hex(' ')}")
+        if not self.transport.send(req): return False
+        resp = self.transport.recv_fixed(8)
+        return bool(resp and len(resp) == 8)
+
+    def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
+        """🟢 [NEW] 發送 0xDF 時間同步指令"""
+        # 格式: Addr, DF, Year(2碼), Month, Day, Hour, Min, Check
+        year_short = dt.year % 100
+        req = bytearray([
+            unit_id, 
+            0xDF, 
+            year_short, 
+            dt.month, 
+            dt.day, 
+            dt.hour, 
+            dt.minute
+        ])
+        req.append(self._calc_checksum(req))
+        
+        if self.debug: print(f"TX [{unit_id}] Sync Time ({dt}): {req.hex(' ')}")
         
         if not self.transport.send(req): return False
         
-        # D0 回傳也是 8 Bytes 確認
+        # 回傳通常是 8 bytes 確認
         resp = self.transport.recv_fixed(8)
-        if self.debug and resp: print(f"RX [{unit_id}] Write Resp: {resp.hex(' ')}")
+        if self.debug and resp: print(f"RX [{unit_id}] Sync Resp: {resp.hex(' ')}")
         
         return bool(resp and len(resp) == 8)
 
@@ -87,7 +95,6 @@ class AmpinvtProtocol:
                     fmt = '>i' if item['signed'] else '>I'
                     val = struct.unpack(fmt, chunk)[0]
                 
-                # 文字映射
                 if item.get('map') and val in item['map']:
                     result[key] = item['map'][val]
                 else:
