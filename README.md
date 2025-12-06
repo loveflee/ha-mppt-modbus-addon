@@ -49,12 +49,15 @@ MPPT 設備 ID (支援多台，用逗號分隔)</br>
 mqtt</br>
 borker(通常是 HA 的 IP)</br>
 core-mosquitto</br></br>
+port(ha預設mqtt port:1883)</br>
+1883</br>
 mqtt_username</br>
 MQTT 帳號 (若無可留空)</br>
-mqtt_user</br>
-mqtt_password</br>
-MQTT 密碼 (若無可留空)</br>
+username</br>
+新增帳戶限制本地登入</br></br>
 password</br>
+MQTT 密碼 (若無可留空)</br>
+
 node_id</br>
 用於 MQTT Topic 的識別名稱 (建議英文)</br>
 wifi01</br>
