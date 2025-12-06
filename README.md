@@ -37,18 +37,18 @@ MQTT Broker (例如 HA 內建的 Mosquitto broker)。</br>
 說明</br>
 範例</br>
 </br></br>
-modbus_host</br>
-RS485 轉接器的 IP 地址</br>
-192.168.1.100</br>
-modbus_port</br>
-RS485 轉接器的 Port</br>
-502</br>
+modbus</br>
+host</br>
+填入串口服務器ip:比如192.168.1.100</br></br>
+port</br>
+填入串口服務器port:502</br></br>
 slave_ids</br>
 MPPT 設備 ID (支援多台，用逗號分隔)</br>
-1, 2, 3</br>
-mqtt_host</br>
-MQTT Broker IP (通常是 HA 的 IP)</br>
-core-mosquitto</br>
+1, 2, 3, 4, 5</br></br>
+
+mqtt</br>
+borker(通常是 HA 的 IP)</br>
+core-mosquitto</br></br>
 mqtt_username</br>
 MQTT 帳號 (若無可留空)</br>
 mqtt_user</br>
