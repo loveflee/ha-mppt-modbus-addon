@@ -37,12 +37,15 @@ MQTT Broker (例如 HA 內建的 Mosquitto broker)。</br>
 說明</br>
 範例</br>
 </br></br>
-modbus</br>
+modbus分頁</br>
+-------------------------------------</br>
 host</br>
 填入串口服務器ip:比如192.168.1.100</br></br>
 port</br>
 填入串口服務器port:502</br></br>
 slave_ids</br>
+mqtt分頁</br>
+-------------------------------------</br>
 MPPT 設備 ID (支援單台或多台，用逗號分隔)</br>
 (mppt設備的地址address)</br>
 單台:</br>
