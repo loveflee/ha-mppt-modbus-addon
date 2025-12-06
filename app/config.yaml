@@ -45,8 +45,8 @@ schema:
   modbus:
     host: str
     port: int
-    unit_ids:
-      - int        # <-- 允許陣列形式，如 [1,2,3]
+    unit_ids: str
+      
     timeout: float
     retry_delay: float
 
