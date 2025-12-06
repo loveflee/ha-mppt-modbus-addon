@@ -1,23 +1,56 @@
-system:
-  debug: false
-#  debug: true
+name: "MPPT Modbus MQTT Poller"
+version: "1.0.0"
+slug: "mppt_modbus_mqtt_poller"
+description: "透過 Modbus gateway 讀取 MPPT 資料並發佈到 MQTT，提供給 Home Assistant 使用。"
+url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+documentation: "https://github.com/loveflee/ha-mppt-modbus-addon"
+arch:
+  - amd64
+  - armv7
+  - aarch64
+startup: services          # 跟隨 HA 服務啟動
+boot: auto                 # HA 開機時自動啟動
 
-modbus:
-  host: "192.168.106.12"
-  port: 502
-  unit_ids: [1, 2, 3, 4, 5]
-  timeout: 3.0
-  retry_delay: 2.0
+# ✅ 可以在 HA UI 修改的參數（會寫到 /data/options.json）
+options:
+  modbus_host: "modbus_gatway_ip"   # 串口伺服器 / MPPT Modbus TCP Server IP
+  modbus_port: 502                # Modbus TCP port
 
-mqtt:
-  broker: "192.168.106.5"  # 請修改您的 MQTT Broker IP
-  port: 1883
-  username: "mqtt"      # 若無帳密請留空
-  password: "mqtt"
-  discovery_prefix: "homeassistant"
-  node_id: "wifi01"
-  device_name: "ampinvt_mppt"
+  mqtt_host: "core-mosquitto"      # MQTT Broker IP（通常就是 HA 的 IP）
+  mqtt_port: 1883
+  mqtt_username: "add new user in ha"
+  mqtt_password: "only Local network can login"
 
-polling:
-  poll_interval: 3           # 輪詢休息時間 (秒)
-  delay_between_units: 0.5   # 設備間隔 (秒)
+  slave_ids: "1,2,3,4,5"          # 要輪詢的 MPPT Slave IDs (逗號分隔字串)
+  poll_interval_seconds: 20       # 輪詢間隔秒數
+  device_delay_ms: 1000            # 每台設備間隔，毫秒
+
+  node_id: "wifi01"               # 在 HA 中當作此 Node 的識別
+  module_name: "ampinvt_mppt"             # module 名，方便未來擴充
+
+  latitude: 24.15                 # 位置，用於日出/日落等邏輯（如有）
+  longitude: 120.67
+
+# ✅ options 型別定義（HA UI 驗證用）
+schema:
+  modbus_host: str
+  modbus_port: int
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_username: str
+  mqtt_password: str
+  slave_ids: str
+  poll_interval_seconds: int
+  device_delay_ms: int
+  node_id: str
+  module_name: str
+  latitude: float
+  longitude: float
+
+# 不用 environment，run.sh 會自己讀 /data/options.json
+map:
+  - config:rw
+  - share:rw
+  - ssl:ro
+
+ports: {}
