@@ -57,8 +57,6 @@ borker(通常是 HA 的 IP)</br>
 core-mosquitto</br></br>
 port(ha預設mqtt port:1883)</br>
 1883</br>
-mqtt_username</br>
-MQTT 帳號 (若無可留空)</br>
 username</br>
 新增帳戶限制本地登入</br></br>
 password</br>
