@@ -14,7 +14,7 @@ startup: services
 boot: auto
 init: false
 
-# ✅ Home Assistant UI 預設值（會寫入 /data/options.json）
+# 預設 options（UI 會顯示並寫入 /data/options.json）
 options:
   debug: false
 
@@ -28,8 +28,8 @@ options:
   mqtt:
     broker: "core-mosquitto"
     port: 1883
-    username: "mqtt"
-    password: "mqtt"
+    username: "user"
+    password: "password"
     discovery_prefix: "homeassistant"
     node_id: "wifi01"
     device_name: "ampinvt_mppt"
@@ -38,7 +38,7 @@ options:
     poll_interval: 3
     delay_between_units: 0.5
 
-# ✅ HA UI 驗證規則（✅ 已完全對齊 options）
+# schema 必須與 options 結構完全一致，且型別正確
 schema:
   debug: bool
 
@@ -46,7 +46,7 @@ schema:
     host: str
     port: int
     unit_ids:
-      - int
+      - int        # <-- 允許陣列形式，如 [1,2,3]
     timeout: float
     retry_delay: float
 
@@ -54,7 +54,7 @@ schema:
     broker: str
     port: int
     username: str
-    password: password
+    password: str    # <-- 使用 str，避免 'password' 錯誤 token
     discovery_prefix: str
     node_id: str
     device_name: str
@@ -63,11 +63,9 @@ schema:
     poll_interval: int
     delay_between_units: float
 
-# ✅ 掛載資料夾
 map:
   - config:rw
   - share:rw
   - ssl:ro
 
-# ✅ 不主動開 Port（由內部程式對外連線）
 ports: {}
