@@ -53,7 +53,7 @@ B1_INFO = [
     {"key": "discharge_limit_voltage", "name": "放電電壓下限", "unit": "V", "scale": 100, "offset": 22, "length": 2, "signed": False, "ha": {"type": "sensor", "device_class": "voltage"}},
     
     # --- 電流參數 ---
-    {"key": "hw_max_charge_current", "name": "硬體最大充電電流", "unit": "A", "scale": 100, "offset": 24, "length": 2, "signed": False, "ha": {"type": "sensor", "icon": "mdi:current-dc"}},
+    {"key": "hw_max_charge_current", "name": "硬體最大充電電流", "unit": "A", "scale": 100, "offset": 24, "length": 2, "signed": False, "ha": {"type": "sensor", "device_class": "current", "icon": "mdi:current-dc"}},
     {"key": "max_charge_current", "name": "設定最大充電電流", "unit": "A", "scale": 100, "offset": 26, "length": 2, "signed": False, "ha": {"type": "sensor", "device_class": "current"}},
     {"key": "run_charge_current_limit", "name": "運行充電電流限制", "unit": "A", "scale": 100, "offset": 28, "length": 2, "signed": False, "ha": {"type": "sensor", "device_class": "current"}},
 
