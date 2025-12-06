@@ -43,7 +43,11 @@ host</br>
 port</br>
 填入串口服務器port:502</br></br>
 slave_ids</br>
-MPPT 設備 ID (支援多台，用逗號分隔)</br>
+MPPT 設備 ID (支援單台或多台，用逗號分隔)</br>
+(mppt設備的地址address)</br>
+單台:</br>
+1
+多台:</br>
 1, 2, 3, 4, 5</br></br>
 
 mqtt</br>
