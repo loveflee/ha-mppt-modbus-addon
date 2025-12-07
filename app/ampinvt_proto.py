@@ -1,49 +1,46 @@
 import logging
 from datetime import datetime
-from core_tcp import AsyncTCPClient # 引用新的 Client
+from core_tcp import RobustTCPClient
 
 logger = logging.getLogger("Proto")
 
-class AsyncAmpinvtProtocol:
+class AmpinvtProtocol:
     """
-    📦 V6.0 非同步協議層
-    負責封包的打包與校驗，底層呼叫 AsyncTCPClient
+    📦 V5.5 同步協議層
     """
-    def __init__(self, tcp_client: AsyncTCPClient, debug: bool = False):
+    def __init__(self, tcp_client: RobustTCPClient, debug: bool = False):
         self.transport = tcp_client
         self.debug = debug
 
     def _calc_checksum(self, data: bytes) -> int:
         return sum(data) & 0xFF
 
-    async def read_b1_data(self, unit_id: int):
+    def read_b1_data(self, unit_id: int):
         req = bytearray([unit_id, 0xB1, 0x01, 0x00, 0x00, 0x00, 0x00])
         req.append(self._calc_checksum(req))
         
         if self.debug: logger.debug(f"TX [{unit_id}] Read: {req.hex(' ')}")
         
-        if not await self.transport.send(req): return None
-        resp = await self.transport.recv_fixed(93)
+        if not self.transport.send(req): return None
+        resp = self.transport.recv_fixed(93)
         
         if self.debug and resp: logger.debug(f"RX [{unit_id}]: {resp.hex(' ')}")
-        if not resp: return None
         
-        if self._calc_checksum(resp[:-1]) != resp[-1]: 
-            if self.debug: logger.warning(f"⚠️ [{unit_id}] 校驗錯誤")
-            return None
+        if not resp or len(resp) != 93: return None
+        if self._calc_checksum(resp[:-1]) != resp[-1]: return None
         return resp
 
-    async def write_c0_command(self, unit_id: int, control_code: int) -> bool:
+    def write_c0_command(self, unit_id: int, control_code: int) -> bool:
         req = bytearray([unit_id, 0xC0, control_code, 0x00, 0x00, 0x00, 0x00])
         req.append(self._calc_checksum(req))
         
         if self.debug: logger.info(f"TX [{unit_id}] Write C0: {req.hex(' ')}")
         
-        if not await self.transport.send(req): return False
-        resp = await self.transport.recv_fixed(8)
+        if not self.transport.send(req): return False
+        resp = self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    async def write_d0_command(self, unit_id: int, code: int, val: float, scale: float, vbytes: list) -> bool:
+    def write_d0_command(self, unit_id: int, code: int, val: float, scale: float, vbytes: list) -> bool:
         int_val = int(round(val / scale))
         req = bytearray([unit_id, 0xD0, code, 0x00, 0x00, 0x00, 0x00])
         
@@ -56,18 +53,18 @@ class AsyncAmpinvtProtocol:
         
         if self.debug: logger.info(f"TX [{unit_id}] Write D0: {req.hex(' ')}")
         
-        if not await self.transport.send(req): return False
-        resp = await self.transport.recv_fixed(8)
+        if not self.transport.send(req): return False
+        resp = self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    async def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
+    def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
         req = bytearray([unit_id, 0xDF, dt.year % 100, dt.month, dt.day, dt.hour, dt.minute])
         req.append(self._calc_checksum(req))
         
         if self.debug: logger.info(f"TX [{unit_id}] TimeSync: {req.hex(' ')}")
         
-        if not await self.transport.send(req): return False
-        resp = await self.transport.recv_fixed(8)
+        if not self.transport.send(req): return False
+        resp = self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
     def decode(self, raw_bytes, map_list, is_bits=False):
@@ -98,5 +95,3 @@ class AsyncAmpinvtProtocol:
              try: result["charge_power"] = round(result["battery_voltage"] * result["charge_current"], 1)
              except: pass
         return result
-
-
