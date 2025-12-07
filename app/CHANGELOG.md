@@ -1,5 +1,7 @@
 # Changelog
 
+5.4.0 下線跳過機制
+
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 
 ## [5.3.0] - 2023-10-27
