@@ -109,4 +109,4 @@ Q3: 支援哪些型號？</br>
 
 
 
-推薦使用[mqtt explorer](https://mqtt-explorer.com/) 觀察訊息 https://mqtt-explorer.com/
+推薦使用 [mqtt explorer](https://mqtt-explorer.com/) 觀察訊息!!!
