@@ -16,8 +16,8 @@ class AsyncTCPClient:
         self.host = host
         self.port = port
         self.timeout = timeout
-        self.reader: asyncio.StreamReader = None
-        self.writer: asyncio.StreamWriter = None
+        self.reader = None
+        self.writer = None
 
     async def connect(self) -> bool:
         """建立非同步連線"""
@@ -37,7 +37,7 @@ class AsyncTCPClient:
                 
             return True
         except (asyncio.TimeoutError, OSError) as e:
-            # logger.debug(f"連線失敗: {e}") # 註解掉避免洗版，交給上層處理
+            # logger.debug(f"連線失敗: {e}") 
             return False
 
     async def close(self):
