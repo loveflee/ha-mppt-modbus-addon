@@ -34,8 +34,10 @@ class AsyncCommandHandler:
 
     async def _reliable_write(self, func, *args):
         """🛡️ 穩健寫入機制：延遲 + 重試"""
-        # 1. 強制冷卻，避免與上一次 Read 黏包
-        await asyncio.sleep(0.3)
+        # 🟢 [修改] 將緩衝時間從 0.3 改為 1.5 秒
+        # 讓上一筆讀取的電訊號徹底消失，且讓 MPPT 喘口氣
+        logger.info("⏳ 等待總線冷卻 (1.5s)...")
+        await asyncio.sleep(1.5)
         
         # 2. 第一次嘗試
         if await func(*args):
@@ -43,12 +45,12 @@ class AsyncCommandHandler:
         
         # 3. 失敗重試
         logger.warning("⚠️ 寫入無回應，嘗試重送...")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0) # 重試前也多等一下
         if await func(*args):
             logger.info("✅ 重送成功")
             return True
         
-        logger.error("❌ 寫入最終失敗 (設備忙碌或數值拒絕)")
+        logger.error("❌ 寫入最終失敗")
         return False
 
     async def _handle_switch(self, uid, key, payload):
