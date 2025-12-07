@@ -2,7 +2,57 @@
 
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 本專案的所有重大變更都將記錄在此文件中。
+# Changelog / 變更日誌
 
+All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
+本專案的所有重大變更都將記錄在此文件中。
+
+## [5.7.1] - Smart Voltage Range Edition (2025-12-08)
+
+### 🚀 Major Features (核心功能)
+
+* **Dual Dynamic Range (雙重動態範圍)**
+    * **EN**: 
+        * **Auto Detection**: Automatically scans battery count (1-16S) and type (Lead-Acid/Lithium) on startup.
+        * **Smart Slider**: Automatically scales Home Assistant voltage sliders based on battery count (e.g., 12V range vs 48V range).
+        * **Lithium Safety**: Enforces a strict 14.6V limit (per 12V unit) for Lithium Iron Phosphate (LiFePO4) batteries to prevent overcharging.
+    * **TW**: 
+        * **自動偵測**: 啟動時自動掃描電池串數 (1-16串) 與類型 (鉛酸/鋰電)。
+        * **智慧滑桿**: 根據電池串數自動縮放 HA 電壓設定範圍 (例如 12V 系統與 48V 系統會看到不同的安全範圍)。
+        * **鐵鋰安全**: 針對磷酸鐵鋰電池實施嚴格的電壓上限 (每 12V 單位限制在 14.6V)，防止誤操作導致過充危險。
+
+* **Interjection Polling (插隊輪詢)**
+    * **EN**: Implemented a "Check Command -> Read Data" loop logic. Ensures MQTT commands are processed immediately before each device read, reducing control latency to < 0.5s.
+    * **TW**: 實作「先檢查指令 -> 再讀取數據」的迴圈邏輯。確保 MQTT 指令在每次讀取設備前優先處理，將控制延遲降至 0.5 秒內。
+
+* **Socket Core (同步核心)**
+    * **EN**: Reverted to blocking `socket` with `TCP_NODELAY` for maximum physical layer stability with RS485 adapters.
+    * **TW**: 回歸使用阻塞式 `socket` 搭配 `TCP_NODELAY`，以獲得對 RS485 轉接器最佳的物理層穩定性 (解決 Asyncio 與老舊硬體的時序相容問題)。
+
+### 🛡️ Reliability (可靠性)
+
+* **Startup Scan (啟動掃描)**
+    * **EN**: Performs a synchronous scan of all devices at startup to populate device details before sending HA discovery config.
+    * **TW**: 程式啟動時執行同步掃描，在發送 HA 註冊資訊前先取得正確的設備詳情。
+
+* **Write-Verify (寫入回讀)**
+    * **EN**: Automatically triggers a data read (`Read B1`) immediately after a successful parameter write (`Write D0`). HA entities update instantly after setting a value.
+    * **TW**: 在成功寫入參數 (Write D0) 後，自動觸發數據讀取 (Read B1)。讓 Home Assistant 實體在設定後立即更新數值，無需等待下一輪輪詢。
+
+* **Robust Config (強健設定)**
+    * **EN**: Enhanced `config.yaml` parser that automatically fixes malformed `unit_ids` (e.g., handles "1, 2", [1, 2], or single integer 1).
+    * **TW**: 增強 `config.yaml` 解析器，具備自動防呆機制，能自動修正格式錯誤的 `unit_ids` (例如處理字串 "1, 2"、列表 [1, 2] 或單一整數 1)。
+
+### 🐛 Fixes (修正)
+
+* **EN**:
+    * Fixed `KeyError` in HA Manager when registering switches.
+    * Fixed `0x24` -> `0x26` register mapping error.
+    * Fixed "No Response" issue by adding pre-write delay (0.3s) and auto-retry logic.
+* **TW**:
+    * 修正 `ha_manager.py` 在註冊開關/按鈕時發生的 `KeyError` 錯誤。
+    * 修正 `0x24` 暫存器地址錯誤 (過放恢復電壓正確位置應為 `0x26`)。
+    * 修正寫入無回應問題，新增「寫入前緩衝 (0.3s)」與「自動重試」機制。
 ## [5.6.0] - Sweet Spot Edition (2025-12-7)
 
 ### 🚀 Major Features (核心功能)
