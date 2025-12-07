@@ -1,5 +1,6 @@
-Ampinvt MPPT Solar Controller Monitor (Home Assistant Add-on)</br>
-Home Assistant 的 Add-on，用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br></br>
+Ampinvt MPPT Solar Controller</br>
+docker compose python開發後,包裝成Home Assistant 的 Add-on，</br>
+用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br></br>
 
 透過 Modbus gateway (串口服務器) 讀取ampinvt mppt數據，</br>
 並利用 MQTT Discovery 自動將感測器註冊到 Home Assistant，無需手動編寫 YAML 設定</br></br>
