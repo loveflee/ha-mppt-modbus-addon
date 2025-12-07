@@ -32,7 +32,7 @@ Home Assistant (OS 或 Supervised 版本，需支援 Add-on Store)。</br>
 MQTT Broker (HA 附加元件內建 Mosquitto broker)。</br></br>
 
 📥 安裝步驟</br>
-在 Home Assistant 中，前往 設定 > Add-ons > Add-on Store。</br>
+在 Home Assistant 中，前往 設定 > Add-ons(附加元件) > Add-on Store。</br>
 點擊右上角的三個點 ... > 管理儲存庫(Repositories)</br>
 添加入本專案的 GitHub 網址：</br>
 [https://github.com/loveflee/ha-mppt-modbus-addon](https://github.com/loveflee/ha-mppt-modbus-addon)</br>
