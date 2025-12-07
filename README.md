@@ -1,4 +1,4 @@
-Ampinvt MPPT Solar Controller</br>
+Ampinvt MPPT Solar Controller 60A</br>
 docker compose python開發後,包裝成Home Assistant 的 Add-on，</br>
 用於監控 佛山金廣源 (Ampinvt) MPPT 太陽能控制器</br></br>
 
