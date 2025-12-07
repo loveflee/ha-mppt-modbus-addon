@@ -117,7 +117,7 @@ async def async_main():
 
     modbus_lock = asyncio.Lock()
     t1 = asyncio.create_task(task_mqtt_processor(mqtt_queue, cmd_handler, modbus_lock))
-    t2 = asyncio.create_task(task_polling_loop(config, protocol, ha_mgr, modbus_lock))
+#    t2 = asyncio.create_task(task_polling_loop(config, protocol, ha_mgr, modbus_lock))
 
     def signal_handler():
         logger.info("🛑 收到停止訊號")
