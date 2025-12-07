@@ -3,7 +3,7 @@
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 本專案的所有重大變更都將記錄在此文件中。
 
-## [5.6.0] - Sweet Spot Edition (2023-10-27)
+## [5.6.0] - Sweet Spot Edition (2025-12-7)
 
 ### 🚀 Major Features (核心功能)
 
@@ -54,7 +54,7 @@ All notable changes to the "Ampinvt MPPT Monitor" project will be documented in 
 
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 
-## [5.3.0] - 2023-10-27
+## [5.3.0] - 2025-12-6
 
 ### 🚀 Major Features (核心功能)
 * **Modular Architecture (模組化架構)**: 
