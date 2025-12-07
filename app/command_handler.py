@@ -1,22 +1,20 @@
 import logging
-import asyncio 
+import time
 import mppt_register_map as rmap
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("CMD")
 
-class AsyncCommandHandler:
+class CommandHandler:
     """
-    🧠 V6.1 指令處理器 (穩定寫入版)
-    新增特性：
-    1. Pre-write Delay: 寫入前等待 0.3s，讓 RS485 線路穩定
-    2. Auto Retry: 寫入失敗自動重試 1 次
+    🧠 V5.5 指令處理器 (插隊 + 立即回讀版)
     """
-    def __init__(self, protocol, timezone_offset=8):
+    def __init__(self, protocol, ha_mgr, timezone_offset=8):
         self.protocol = protocol
+        self.ha_mgr = ha_mgr # 🟢 需要這個來發布更新
         self.tz_offset = timezone_offset
 
-    async def process_message(self, topic: str, payload: str):
+    def process_message(self, topic: str, payload: str):
         try:
             parts = topic.split('/')
             if len(parts) < 4: return
@@ -24,63 +22,72 @@ class AsyncCommandHandler:
             try: uid = int(entity_base.split('_')[-1])
             except: return
 
-            if domain == "switch": await self._handle_switch(uid, key, payload)
-            elif domain == "button": await self._handle_button(uid, key)
-            elif domain == "number": await self._handle_number(uid, key, payload)
-            elif domain == "select": await self._handle_select(uid, key, payload)
+            # 分發指令
+            if domain == "switch": self._handle_switch(uid, key, payload)
+            elif domain == "button": self._handle_button(uid, key)
+            elif domain == "number": self._handle_number(uid, key, payload)
+            elif domain == "select": self._handle_select(uid, key, payload)
 
         except Exception as e:
             logger.error(f"指令處理錯誤: {e}")
 
-    async def _reliable_write(self, func, *args):
-        """🛡️ 穩健寫入機制：延遲 + 重試"""
-        # 🟢 [修改] 將緩衝時間從 0.3 改為 1.5 秒
-        # 讓上一筆讀取的電訊號徹底消失，且讓 MPPT 喘口氣
-        logger.info("⏳ 等待總線冷卻 (1.5s)...")
-        await asyncio.sleep(1.5)
+    # 🟢 [核心] 寫入後驗證機制
+    def _write_and_verify(self, uid, write_func, *args):
+        """
+        1. 暫停一下讓線路冷卻
+        2. 執行寫入
+        3. 若成功，休息一下讓設備存檔
+        4. 立即讀取 B1 狀態並更新 HA
+        """
+        time.sleep(0.2) # Pre-write delay
         
-        # 2. 第一次嘗試
-        if await func(*args):
-            return True
-        
-        # 3. 失敗重試
-        logger.warning("⚠️ 寫入無回應，嘗試重送...")
-        await asyncio.sleep(1.0) # 重試前也多等一下
-        if await func(*args):
-            logger.info("✅ 重送成功")
-            return True
-        
-        logger.error("❌ 寫入最終失敗")
-        return False
+        if write_func(*args):
+            logger.info("⚡ 寫入成功，準備回讀狀態...")
+            time.sleep(0.5) # 等設備寫入記憶體
+            
+            # 立即讀取 B1
+            raw_data = self.protocol.read_b1_data(uid)
+            if raw_data:
+                logger.info("✅ 回讀成功，更新 HA 狀態")
+                vals = self.protocol.decode(raw_data, rmap.B1_INFO)
+                bits = self.protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
+                self.ha_mgr.publish_state(uid, vals, "state_b1")
+                self.ha_mgr.publish_state(uid, bits, "state_bits")
+            else:
+                logger.warning("⚠️ 回讀失敗 (設備忙碌?)")
+        else:
+            logger.error("❌ 寫入失敗 (無回應)")
 
-    async def _handle_switch(self, uid, key, payload):
+    def _handle_switch(self, uid, key, payload):
         switch_def = rmap.CONTROL_SWITCHES.get(key)
         if switch_def:
             cmd = switch_def['on_code'] if payload.upper() == "ON" else switch_def['off_code']
             logger.info(f"👉 [Switch] 切換 {key} -> {payload}")
-            await self._reliable_write(self.protocol.write_c0_command, uid, cmd)
+            self._write_and_verify(uid, self.protocol.write_c0_command, uid, cmd)
 
-    async def _handle_button(self, uid, key):
+    def _handle_button(self, uid, key):
         btn_def = rmap.CONTROL_BUTTONS.get(key)
         if btn_def:
             if btn_def.get('code') == 0xDF:
-                local_dt = self._get_local_time()
+                local_dt = datetime.now(timezone.utc) + timedelta(hours=self.tz_offset)
                 logger.info(f"⏰ 同步時間: {local_dt}")
-                await self._reliable_write(self.protocol.write_time_sync, uid, local_dt)
+                # 時間同步通常不需要回讀驗證，直接發送即可
+                self.protocol.write_time_sync(uid, local_dt)
             else:
                 logger.info(f"👉 [Button] 觸發 {key}")
-                await self._reliable_write(self.protocol.write_c0_command, uid, btn_def['code'])
+                # 按鈕類 (如背光) 也不一定需要回讀，看您需求，這裡選擇回讀以確認連線
+                self._write_and_verify(uid, self.protocol.write_c0_command, uid, btn_def['code'])
 
-    async def _handle_number(self, uid, key, payload):
+    def _handle_number(self, uid, key, payload):
         target, code = self._find_d0(key)
         if target:
             try:
                 val = float(payload)
                 logger.info(f"👉 [Number] 設定 {key} = {val}")
-                await self._reliable_write(self.protocol.write_d0_command, uid, code, val, target['scale'], target['valid_bytes'])
+                self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, target['scale'], target['valid_bytes'])
             except: pass
 
-    async def _handle_select(self, uid, key, payload):
+    def _handle_select(self, uid, key, payload):
         target, code = self._find_d0(key)
         if target:
             map_dict = None
@@ -98,14 +105,9 @@ class AsyncCommandHandler:
             
             if val is not None:
                 logger.info(f"👉 [Select] 設定 {key} = {payload} (ID={val})")
-                await self._reliable_write(self.protocol.write_d0_command, uid, code, val, 1, target['valid_bytes'])
+                self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, 1, target['valid_bytes'])
 
     def _find_d0(self, key):
         for c, i in rmap.D0_PARAMS.items():
             if i['key'] == key: return i, c
         return None, None
-
-    def _get_local_time(self):
-        return datetime.now(timezone.utc) + timedelta(hours=self.tz_offset)
-
-
