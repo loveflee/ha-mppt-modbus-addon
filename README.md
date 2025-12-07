@@ -105,8 +105,5 @@ Q3: 支援哪些型號？</br>
 {{ (mppt1 + mppt2 + mppt3 + mppt4 + mppt5) }}
 ```
 </br>
-以下非必須舊版本的強制重啟
-
-
 
 推薦使用 [mqtt explorer](https://mqtt-explorer.com/) 觀察訊息!!!
