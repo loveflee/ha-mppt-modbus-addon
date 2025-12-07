@@ -7,11 +7,11 @@ logger = logging.getLogger("CMD")
 
 class CommandHandler:
     """
-    🧠 V5.5 指令處理器 (插隊 + 立即回讀版)
+    🧠 V5.7.1 指令處理器 (同步版 + 延遲寫入)
     """
     def __init__(self, protocol, ha_mgr, timezone_offset=8):
         self.protocol = protocol
-        self.ha_mgr = ha_mgr # 🟢 需要這個來發布更新
+        self.ha_mgr = ha_mgr
         self.tz_offset = timezone_offset
 
     def process_message(self, topic: str, payload: str):
@@ -22,7 +22,6 @@ class CommandHandler:
             try: uid = int(entity_base.split('_')[-1])
             except: return
 
-            # 分發指令
             if domain == "switch": self._handle_switch(uid, key, payload)
             elif domain == "button": self._handle_button(uid, key)
             elif domain == "number": self._handle_number(uid, key, payload)
@@ -33,30 +32,27 @@ class CommandHandler:
 
     # 🟢 [核心] 寫入後驗證機制
     def _write_and_verify(self, uid, write_func, *args):
-        """
-        1. 暫停一下讓線路冷卻
-        2. 執行寫入
-        3. 若成功，休息一下讓設備存檔
-        4. 立即讀取 B1 狀態並更新 HA
-        """
-        time.sleep(0.2) # Pre-write delay
+        time.sleep(0.3) # 讓總線冷卻
         
         if write_func(*args):
             logger.info("⚡ 寫入成功，準備回讀狀態...")
-            time.sleep(0.5) # 等設備寫入記憶體
-            
-            # 立即讀取 B1
+            time.sleep(0.5) 
             raw_data = self.protocol.read_b1_data(uid)
             if raw_data:
-                logger.info("✅ 回讀成功，更新 HA 狀態")
+                logger.info("✅ 回讀成功，更新 HA")
                 vals = self.protocol.decode(raw_data, rmap.B1_INFO)
                 bits = self.protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
                 self.ha_mgr.publish_state(uid, vals, "state_b1")
                 self.ha_mgr.publish_state(uid, bits, "state_bits")
             else:
-                logger.warning("⚠️ 回讀失敗 (設備忙碌?)")
+                logger.warning("⚠️ 回讀失敗")
         else:
-            logger.error("❌ 寫入失敗 (無回應)")
+            logger.warning("⚠️ 寫入無回應，嘗試重送...")
+            time.sleep(1.0)
+            if write_func(*args):
+                logger.info("✅ 重送成功")
+            else:
+                logger.error("❌ 寫入最終失敗")
 
     def _handle_switch(self, uid, key, payload):
         switch_def = rmap.CONTROL_SWITCHES.get(key)
@@ -71,11 +67,9 @@ class CommandHandler:
             if btn_def.get('code') == 0xDF:
                 local_dt = datetime.now(timezone.utc) + timedelta(hours=self.tz_offset)
                 logger.info(f"⏰ 同步時間: {local_dt}")
-                # 時間同步通常不需要回讀驗證，直接發送即可
                 self.protocol.write_time_sync(uid, local_dt)
             else:
                 logger.info(f"👉 [Button] 觸發 {key}")
-                # 按鈕類 (如背光) 也不一定需要回讀，看您需求，這裡選擇回讀以確認連線
                 self._write_and_verify(uid, self.protocol.write_c0_command, uid, btn_def['code'])
 
     def _handle_number(self, uid, key, payload):
