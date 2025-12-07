@@ -1,77 +1,78 @@
-import struct
-from typing import Dict, Any, List, Optional
+import logging
 from datetime import datetime
-from core_tcp import RobustTCPClient
+from core_tcp import AsyncTCPClient # 引用新的 Client
 
-class AmpinvtProtocol:
+logger = logging.getLogger("Proto")
+
+class AsyncAmpinvtProtocol:
     """
-    📦 協議層：V4.5 新增時間同步功能 (0xDF)
+    📦 V6.0 非同步協議層
+    負責封包的打包與校驗，底層呼叫 AsyncTCPClient
     """
-    def __init__(self, tcp_client: RobustTCPClient, debug: bool = False):
+    def __init__(self, tcp_client: AsyncTCPClient, debug: bool = False):
         self.transport = tcp_client
         self.debug = debug
 
     def _calc_checksum(self, data: bytes) -> int:
         return sum(data) & 0xFF
 
-    def read_b1_data(self, unit_id: int) -> Optional[bytes]:
+    async def read_b1_data(self, unit_id: int):
         req = bytearray([unit_id, 0xB1, 0x01, 0x00, 0x00, 0x00, 0x00])
         req.append(self._calc_checksum(req))
-        if self.debug: print(f"TX [{unit_id}] Read: {req.hex(' ')}")
-        if not self.transport.send(req): return None
-        resp = self.transport.recv_fixed(93)
+        
+        if self.debug: logger.debug(f"TX [{unit_id}] Read: {req.hex(' ')}")
+        
+        if not await self.transport.send(req): return None
+        resp = await self.transport.recv_fixed(93)
+        
+        if self.debug and resp: logger.debug(f"RX [{unit_id}]: {resp.hex(' ')}")
+        if not resp: return None
+        
+        if self._calc_checksum(resp[:-1]) != resp[-1]: 
+            if self.debug: logger.warning(f"⚠️ [{unit_id}] 校驗錯誤")
+            return None
         return resp
 
-    def write_c0_command(self, unit_id: int, control_code: int) -> bool:
+    async def write_c0_command(self, unit_id: int, control_code: int) -> bool:
         req = bytearray([unit_id, 0xC0, control_code, 0x00, 0x00, 0x00, 0x00])
         req.append(self._calc_checksum(req))
-        if self.debug: print(f"TX [{unit_id}] Write C0: {req.hex(' ')}")
-        if not self.transport.send(req): return False
-        resp = self.transport.recv_fixed(8)
+        
+        if self.debug: logger.info(f"TX [{unit_id}] Write C0: {req.hex(' ')}")
+        
+        if not await self.transport.send(req): return False
+        resp = await self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    def write_d0_command(self, unit_id: int, param_code: int, value: float, scale: float, valid_bytes: list) -> bool:
-        int_val = int(round(value / scale))
-        req = bytearray([unit_id, 0xD0, param_code, 0x00, 0x00, 0x00, 0x00])
-        if len(valid_bytes) == 1:
-            req[valid_bytes[0]] = int_val & 0xFF
-        elif len(valid_bytes) == 2:
-            high_idx, low_idx = valid_bytes
-            req[high_idx] = (int_val >> 8) & 0xFF
-            req[low_idx] = int_val & 0xFF
+    async def write_d0_command(self, unit_id: int, code: int, val: float, scale: float, vbytes: list) -> bool:
+        int_val = int(round(val / scale))
+        req = bytearray([unit_id, 0xD0, code, 0x00, 0x00, 0x00, 0x00])
+        
+        if len(vbytes) == 1: req[vbytes[0]] = int_val & 0xFF
+        elif len(vbytes) == 2:
+            req[vbytes[0]] = (int_val >> 8) & 0xFF
+            req[vbytes[1]] = int_val & 0xFF
+            
         req.append(self._calc_checksum(req))
         
-        if self.debug: print(f"TX [{unit_id}] Write D0: {req.hex(' ')}")
-        if not self.transport.send(req): return False
-        resp = self.transport.recv_fixed(8)
+        if self.debug: logger.info(f"TX [{unit_id}] Write D0: {req.hex(' ')}")
+        
+        if not await self.transport.send(req): return False
+        resp = await self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
-        """🟢 [NEW] 發送 0xDF 時間同步指令"""
-        # 格式: Addr, DF, Year(2碼), Month, Day, Hour, Min, Check
-        year_short = dt.year % 100
-        req = bytearray([
-            unit_id, 
-            0xDF, 
-            year_short, 
-            dt.month, 
-            dt.day, 
-            dt.hour, 
-            dt.minute
-        ])
+    async def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
+        req = bytearray([unit_id, 0xDF, dt.year % 100, dt.month, dt.day, dt.hour, dt.minute])
         req.append(self._calc_checksum(req))
         
-        if self.debug: print(f"TX [{unit_id}] Sync Time ({dt}): {req.hex(' ')}")
+        if self.debug: logger.info(f"TX [{unit_id}] TimeSync: {req.hex(' ')}")
         
-        if not self.transport.send(req): return False
-        
-        # 回傳通常是 8 bytes 確認
-        resp = self.transport.recv_fixed(8)
-        if self.debug and resp: print(f"RX [{unit_id}] Sync Resp: {resp.hex(' ')}")
-        
+        if not await self.transport.send(req): return False
+        resp = await self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    def decode(self, raw_bytes: bytes, map_list: Any, is_bits: bool = False) -> Dict[str, Any]:
+    # Decode 函式是純運算，不需要 async，直接複製過來即可
+    def decode(self, raw_bytes, map_list, is_bits=False):
+        import struct
         result = {}
         if is_bits:
             for key, info in map_list.items():
@@ -81,26 +82,19 @@ class AmpinvtProtocol:
             return result
 
         for item in map_list:
-            key, offset, length, scale = item['key'], item['offset'], item['length'], item['scale']
-            if offset + length > len(raw_bytes): continue
-            
-            chunk = raw_bytes[offset : offset + length]
+            key, off, ln, sc = item['key'], item['offset'], item['length'], item['scale']
+            if off + ln > len(raw_bytes): continue
+            chunk = raw_bytes[off : off + ln]
             val = 0
             try:
-                if length == 1: val = chunk[0]
-                elif length == 2:
-                    fmt = '>h' if item['signed'] else '>H'
-                    val = struct.unpack(fmt, chunk)[0]
-                elif length == 4:
-                    fmt = '>i' if item['signed'] else '>I'
-                    val = struct.unpack(fmt, chunk)[0]
+                if ln == 1: val = chunk[0]
+                elif ln == 2: val = struct.unpack('>h' if item['signed'] else '>H', chunk)[0]
+                elif ln == 4: val = struct.unpack('>i' if item['signed'] else '>I', chunk)[0]
                 
-                if item.get('map') and val in item['map']:
-                    result[key] = item['map'][val]
-                else:
-                    result[key] = round(val / scale, 2) if scale != 1 else val
+                if item.get('map') and val in item['map']: result[key] = item['map'][val]
+                else: result[key] = round(val / sc, 2) if sc != 1 else val
             except: pass
-
+            
         if "battery_voltage" in result and "charge_current" in result:
              try: result["charge_power"] = round(result["battery_voltage"] * result["charge_current"], 1)
              except: pass
