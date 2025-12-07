@@ -66,9 +66,9 @@ core-mosquitto</br></br>
 port(ha預設mqtt port:1883)</br>
 1883</br>
 username</br>
-新增帳戶限制本地登入</br></br>
+新增帳號( 勾選>>限制本地登入 )</br></br>
 password</br>
-MQTT 密碼 (若無可留空)</br>
+新增帳號密碼</br>
 
 node_id</br>
 用於 MQTT Topic 的識別名稱 (建議英文)</br>
