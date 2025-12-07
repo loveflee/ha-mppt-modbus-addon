@@ -45,7 +45,7 @@ MQTT Broker (HA 附加元件內建 Mosquitto broker)。</br></br>
 安裝後，請至 Add-on 的 Configuration 頁面進行設定：</br>
 參數說明範例</br></br></br>
 
-modbus分頁</br>
+[https://github.com/loveflee/ha-mppt-modbus-addon/blob/main/README.md#%EF%B8%8F-configuration-%E8%A8%AD%E5%AE%9A%E8%AA%AA%E6%98%8E](modbus分頁)</br>
 -------------------------------------</br>
 host</br>
 填入串口服務器ip:比如192.168.1.100</br></br>
