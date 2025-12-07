@@ -70,7 +70,6 @@ class AsyncAmpinvtProtocol:
         resp = await self.transport.recv_fixed(8)
         return bool(resp and len(resp) == 8)
 
-    # Decode 函式是純運算，不需要 async，直接複製過來即可
     def decode(self, raw_bytes, map_list, is_bits=False):
         import struct
         result = {}
@@ -99,3 +98,5 @@ class AsyncAmpinvtProtocol:
              try: result["charge_power"] = round(result["battery_voltage"] * result["charge_current"], 1)
              except: pass
         return result
+
+
