@@ -4,8 +4,7 @@ import mppt_register_map as rmap
 
 class HAManager:
     """
-    🏠 HA Manager V5.7.1
-    Feature: Dual Dynamic Range (Lead-Acid vs Lithium)
+    🏠 HA Manager V5.7.2 (Fix KeyError)
     """
     def __init__(self, mqtt: RobustMQTTClient, config: dict):
         self.mqtt = mqtt
@@ -22,26 +21,30 @@ class HAManager:
             "select": f"{self.prefix}/select"
         }
 
-    # 🟢 [核心] 支援 device_details
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        print("📤 發送 HA Discovery (V5.7.1 智慧範圍)...")
+        print("📤 發送 HA Discovery (V5.7.2 修復版)...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
             dev_info = self._get_dev_info(uid)
             
-            # 取得詳情 (預設 1串 鉛酸)
             details = device_details.get(uid, {'count': 1, 'type': 0})
             
             for item in rmap.B1_INFO:
                 if "ha" in item: self._pub(uid, entity_base, item, dev_info, "sensor", "state_b1")
+            
             for key, item in rmap.B3_STATUS_BITS.items():
                 item['key'] = key 
                 self._pub(uid, entity_base, item, dev_info, "binary_sensor", "state_bits", is_bin=True)
 
             if hasattr(rmap, 'CONTROL_SWITCHES'):
-                for key, item in rmap.CONTROL_SWITCHES.items(): self._pub_switch(uid, entity_base, item, dev_info)
+                for key, item in rmap.CONTROL_SWITCHES.items():
+                    item['key'] = key # 🟢 [修復] 補上 key
+                    self._pub_switch(uid, entity_base, item, dev_info)
+            
             if hasattr(rmap, 'CONTROL_BUTTONS'):
-                for key, item in rmap.CONTROL_BUTTONS.items(): self._pub_button(uid, entity_base, item, dev_info)
+                for key, item in rmap.CONTROL_BUTTONS.items():
+                    item['key'] = key # 🟢 [修復] 補上 key
+                    self._pub_button(uid, entity_base, item, dev_info)
 
             if hasattr(rmap, 'D0_PARAMS'):
                 for code, item in rmap.D0_PARAMS.items():
@@ -55,7 +58,7 @@ class HAManager:
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT 控制器 #{uid}",
-            "model": "Ampinvt V5.7.1",
+            "model": "Ampinvt V5.7.2",
             "manufacturer": "ampinvt",
         }
 
@@ -84,7 +87,8 @@ class HAManager:
         self._publish_config(topic, payload)
 
     def _pub_switch(self, uid, entity_base, item, dev_info):
-        key = item['key']; topic = f"{self.prefix}/switch/{entity_base}/{key}/config"
+        key = item['key']
+        topic = f"{self.prefix}/switch/{entity_base}/{key}/config"
         payload = {
             "name": item['name'], "unique_id": f"{entity_base}_{key}_sw", "device": dev_info,
             "command_topic": f"{self.cmd_base['switch']}/{entity_base}/{key}/set",
@@ -97,7 +101,8 @@ class HAManager:
         self._publish_config(topic, payload)
 
     def _pub_button(self, uid, entity_base, item, dev_info):
-        key = item['key']; topic = f"{self.prefix}/button/{entity_base}/{key}/config"
+        key = item['key']
+        topic = f"{self.prefix}/button/{entity_base}/{key}/config"
         payload = {
             "name": item['name'], "unique_id": f"{entity_base}_{key}_btn", "device": dev_info,
             "command_topic": f"{self.cmd_base['button']}/{entity_base}/{key}/set",
@@ -105,7 +110,6 @@ class HAManager:
         }
         self._publish_config(topic, payload)
 
-    # 🟢 [核心] 動態範圍計算
     def _pub_number(self, uid, entity_base, item, dev_info, details):
         key = item['key']; ha_conf = item['ha']
         topic = f"{self.prefix}/number/{entity_base}/{key}/config"
@@ -113,7 +117,6 @@ class HAManager:
         b_count = details.get('count', 1)
         b_type = details.get('type', 0)
         
-        # 判斷使用哪組 Base
         if b_type == 3 and 'li_base_min' in ha_conf:
             min_val = ha_conf['li_base_min']
             max_val = ha_conf['li_base_max']
@@ -121,7 +124,6 @@ class HAManager:
             min_val = ha_conf.get('base_min', ha_conf.get('min', 0))
             max_val = ha_conf.get('base_max', ha_conf.get('max', 100))
             
-        # 乘上倍率
         if 'base_min' in ha_conf:
             min_val *= b_count
             max_val *= b_count
