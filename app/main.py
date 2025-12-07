@@ -34,30 +34,34 @@ def mqtt_bridge_callback(client, userdata, msg, loop, async_queue):
         except: pass
 
 async def task_mqtt_processor(queue, handler, lock):
-    """任務 A: MQTT 指令處理器 (即時回應)"""
+    """
+    任務 A: MQTT 指令處理器 (高優先級)
+    """
     logger.info("🟢 [Task] 指令監聽器啟動")
     while not shutdown_event.is_set():
         try:
             # 等待指令 (非阻塞)
             msg = await queue.get()
             
-            # 解析
             payload = msg.payload.decode().strip()
             topic = msg.topic
             logger.info(f"⚡ 插隊指令: {topic} -> {payload}")
 
-            # 🟢 [關鍵] 申請鎖 (如果輪詢正在進行，這裡會等待直到它釋放)
+            # 🟢 [關鍵] 申請鎖 (如果輪詢正在進行，這裡會等待直到輪詢結束)
             async with lock:
                 await handler.process_message(topic, payload)
             
             queue.task_done()
             
-        except asyncio.CancelledError: break
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.error(f"指令任務異常: {e}")
 
 async def task_polling_loop(cfg, protocol, ha_mgr, lock):
-    """任務 B: 週期輪詢器"""
+    """
+    任務 B: 週期性輪詢 (低優先級)
+    """
     logger.info("🟢 [Task] 數據輪詢器啟動")
     unit_ids = cfg['modbus']['unit_ids']
     poll_int = cfg['polling']['poll_interval']
@@ -81,6 +85,7 @@ async def task_polling_loop(cfg, protocol, ha_mgr, lock):
                 try:
                     data = await protocol.read_b1_data(uid)
                     if data:
+                        # 解碼與發佈 (這部分很快，不需要佔用鎖)
                         vals = protocol.decode(data, rmap.B1_INFO)
                         bits = protocol.decode(data, rmap.B3_STATUS_BITS, is_bits=True)
                         ha_mgr.publish_state(uid, vals, "state_b1")
@@ -136,8 +141,6 @@ async def async_main():
     mqtt.set_lwt(ha_mgr.availability_topic, payload="offline", retain=True)
     mqtt.connect()
     
-    # 這裡有點小技巧：因為我們無法在 on_connect 裡做非同步操作
-    # 所以我們直接在這裡訂閱，或者等一下再訂閱
     ha_mgr.send_discovery(config['modbus']['unit_ids'])
     mqtt.publish(ha_mgr.availability_topic, "online", retain=True)
     for t in ["switch", "button", "number", "select"]:
