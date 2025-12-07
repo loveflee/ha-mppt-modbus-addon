@@ -2,7 +2,7 @@ import time
 import yaml
 import signal
 import sys
-import logging # 引入標準庫
+import logging
 from datetime import datetime, timedelta, timezone
 
 # 🟢 [修改] 引入我們剛寫好的日誌模組
@@ -19,7 +19,7 @@ from command_handler import CommandHandler
 mqtt_client = None
 ha_mgr = None
 app_config = None
-logger = None # 這是 Main 專用的 logger
+logger = None
 
 def load_config():
     """讀取設定檔"""
@@ -69,13 +69,12 @@ def main():
     app_config = load_config()
     if not app_config: sys.exit(1)
 
-    # 2. 🟢 初始化日誌系統 (只需做一次，其他模組就會自動生效)
+    # 2. 初始化日誌
     debug_mode = app_config['system'].get('debug', False)
-    # 設定好全域日誌，並取得 Main 專用的 logger
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
     
-    logger.info("🚀 MPPT 監控系統啟動 (V5.3 日誌模組化版)")
+    logger.info("🚀 MPPT 監控系統啟動 (V5.4 斷線優化版)")
     
     modbus_cfg = app_config['modbus']
     mqtt_cfg = app_config['mqtt']
@@ -91,7 +90,6 @@ def main():
     protocol = AmpinvtProtocol(tcp, debug=debug_mode)
     ha_mgr = HAManager(mqtt_client, mqtt_cfg)
     
-    # 傳入 Handler
     cmd_handler = CommandHandler(protocol, timezone_offset=sys_cfg.get('timezone_offset', 8))
 
     logger.info(f"👻 設定 LWT: {ha_mgr.availability_topic}")
@@ -109,6 +107,11 @@ def main():
 
     consecutive_errors = 0    
     MAX_ERRORS = 20
+    
+    # 🟢 [NEW] 設備狀態追蹤器
+    # 格式: { uid: next_retry_timestamp }
+    offline_devices = {}
+    OFFLINE_RETRY_DELAY = 60 # 離線設備每 60 秒才試一次
 
     # 4. 主迴圈
     while True:
@@ -131,7 +134,17 @@ def main():
         # B. 輪詢數據
         try:
             any_success = False 
+            current_time = time.time()
+
             for uid in modbus_cfg['unit_ids']:
+                # 🟢 [優化] 檢查是否在黑名單中
+                if uid in offline_devices:
+                    if current_time < offline_devices[uid]:
+                        # 還沒到重試時間，跳過！
+                        continue
+                    else:
+                        logger.info(f"🔄 嘗試重連離線設備: #{uid}")
+
                 try:
                     raw_data = protocol.read_b1_data(uid)
                     if raw_data:
@@ -140,18 +153,32 @@ def main():
                         ha_mgr.publish_state(uid, vals, "state_b1")
                         ha_mgr.publish_state(uid, bits, "state_bits")
                         any_success = True 
+                        
+                        # 🟢 [優化] 成功讀取，從黑名單移除
+                        if uid in offline_devices:
+                            logger.info(f"✅ 設備 #{uid} 已恢復連線！")
+                            del offline_devices[uid]
+                    
                     time.sleep(app_config['polling']['delay_between_units'])
-                except: pass
+                    
+                except Exception:
+                    # 🟢 [優化] 讀取失敗，加入黑名單
+                    logger.warning(f"⚠️ 設備 #{uid} 讀取失敗，將暫停輪詢 {OFFLINE_RETRY_DELAY} 秒")
+                    offline_devices[uid] = current_time + OFFLINE_RETRY_DELAY
+                    # 這裡不計入 watchdog 錯誤，因為單台斷線不代表系統掛掉
             
-            if any_success:
+            # Watchdog 邏輯調整：
+            # 如果全部設備都在黑名單，或者全部讀取失敗，才算一次錯誤
+            if any_success or len(offline_devices) < len(modbus_cfg['unit_ids']):
                 consecutive_errors = 0 
             else:
+                # 只有當「所有設備都連不上」時，才增加錯誤計數
                 consecutive_errors += 1 
                 if consecutive_errors % 5 == 0:
-                    logger.warning(f"⚠️ 連續讀取失敗 ({consecutive_errors}/{MAX_ERRORS})")
+                    logger.warning(f"⚠️ 全部設備皆無法連線 ({consecutive_errors}/{MAX_ERRORS})")
 
             if consecutive_errors >= MAX_ERRORS:
-                logger.critical("❌ 系統嚴重故障，強制重啟")
+                logger.critical("❌ 系統完全癱瘓 (RS485 卡死?)，強制重啟")
                 mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
                 sys.exit(1)
 
