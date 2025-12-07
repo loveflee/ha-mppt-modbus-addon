@@ -16,8 +16,8 @@ class AsyncTCPClient:
         self.host = host
         self.port = port
         self.timeout = timeout
-        self.reader = None
-        self.writer = None
+        self.reader: asyncio.StreamReader = None
+        self.writer: asyncio.StreamWriter = None
 
     async def connect(self) -> bool:
         """建立非同步連線"""
