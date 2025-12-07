@@ -1,5 +1,5 @@
 name: "MPPT Modbus MQTT Poller"
-version: "6.0.3"
+version: "5.5.1"
 slug: "mppt_modbus_mqtt_poller"
 description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數"
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
