@@ -1,192 +1,178 @@
-import time
-import yaml
+import asyncio
+import logging
 import signal
 import sys
-import logging
-from datetime import datetime, timedelta, timezone
-
-# 🟢 [修改] 引入我們剛寫好的日誌模組
+import yaml
 from core_logging import setup_global_logging
-
-import mppt_register_map as rmap
-from core_tcp import RobustTCPClient
-from core_mqtt import RobustMQTTClient
-from ampinvt_proto import AmpinvtProtocol
+from core_mqtt import RobustMQTTClient # MQTT 保持原樣 (它有自己的 Thread)
+from core_tcp import AsyncTCPClient    # 🟢 換成 AsyncTCPClient
+from ampinvt_proto import AsyncAmpinvtProtocol # 🟢 換成 AsyncProtocol
+from command_handler import AsyncCommandHandler # 🟢 換成 AsyncHandler
 from ha_manager import HAManager
-from command_handler import CommandHandler
+import mppt_register_map as rmap
 
-# 全域變數
-mqtt_client = None
-ha_mgr = None
-app_config = None
 logger = None
+shutdown_event = asyncio.Event()
 
 def load_config():
-    """讀取設定檔"""
-    default_config = {
-        "system": {"debug": False, "timezone_offset": 8},
-        "modbus": {"host": "127.0.0.1", "port": 502, "timeout": 3.0, "unit_ids": [1]},
-        "mqtt": {"broker": "localhost", "port": 1883, "username": "", "password": "", 
-                 "discovery_prefix": "homeassistant", "node_id": "mppt", "device_name": "MPPT", 
-                 "reset_discovery_on_exit": False},
-        "polling": {"poll_interval": 3, "delay_between_units": 0.5}
-    }
     try:
-        with open("config.yaml", "r") as f: 
-            user_config = yaml.safe_load(f) or {}
-    except: user_config = {}
+        with open("config.yaml", "r") as f: config = yaml.safe_load(f)
+        modbus = config.get('modbus', {})
+        raw = modbus.get('unit_ids', "1")
+        if isinstance(raw, str):
+            modbus['unit_ids'] = [int(x) for x in raw.split(',') if x.strip().isdigit()]
+        elif isinstance(raw, int):
+            modbus['unit_ids'] = [raw]
+        return config
+    except: return None
 
-    config = default_config.copy()
-    for section, params in user_config.items():
-        if section in config and isinstance(params, dict):
-            config[section].update(params)
-
-    modbus = config['modbus']
-    raw_ids = modbus.get('unit_ids', [1])
-    if isinstance(raw_ids, str):
-        modbus['unit_ids'] = [int(x) for x in raw_ids.split(',') if x.strip().isdigit()]
-    elif isinstance(raw_ids, int):
-        modbus['unit_ids'] = [raw_ids]
-        
-    return config
-
-def graceful_exit(signum, frame):
-    logger.info(f"🛑 收到關閉指令 ({signum})，正在清理資源...")
-    if app_config and ha_mgr and mqtt_client:
-        if app_config['mqtt']['reset_discovery_on_exit']:
-            logger.warning("🧹 清除 HA 實體...")
-            try: ha_mgr.clear_all_discovery(app_config['modbus']['unit_ids']); time.sleep(1)
-            except: pass
-    if mqtt_client:
-        logger.info("🔌 斷開 MQTT 連線...")
-        mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
-    sys.exit(0)
-
-def main():
-    global mqtt_client, ha_mgr, app_config, logger
-    
-    # 1. 載入設定
-    app_config = load_config()
-    if not app_config: sys.exit(1)
-
-    # 2. 初始化日誌
-    debug_mode = app_config['system'].get('debug', False)
-    setup_global_logging(debug_mode)
-    logger = logging.getLogger("Main")
-    
-    logger.info("🚀 MPPT 監控系統啟動 (V5.4 斷線優化版)")
-    
-    modbus_cfg = app_config['modbus']
-    mqtt_cfg = app_config['mqtt']
-    sys_cfg = app_config['system']
-    
-    signal.signal(signal.SIGINT, graceful_exit)
-    signal.signal(signal.SIGTERM, graceful_exit)
-
-    # 3. 初始化模組
-    tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
-    mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
-    
-    protocol = AmpinvtProtocol(tcp, debug=debug_mode)
-    ha_mgr = HAManager(mqtt_client, mqtt_cfg)
-    
-    cmd_handler = CommandHandler(protocol, timezone_offset=sys_cfg.get('timezone_offset', 8))
-
-    logger.info(f"👻 設定 LWT: {ha_mgr.availability_topic}")
-    mqtt_client.set_lwt(ha_mgr.availability_topic, payload="offline", retain=True)
-
-    def on_mqtt_ready():
-        ha_mgr.send_discovery(modbus_cfg['unit_ids'])
-        mqtt_client.publish(ha_mgr.availability_topic, "online", retain=True)
-        for t in ["switch", "button", "number", "select"]:
-            mqtt_client.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
-        logger.info("👂 MQTT 準備就緒")
-
-    mqtt_client.on_connected_callback = on_mqtt_ready
-    mqtt_client.connect()
-
-    consecutive_errors = 0    
-    MAX_ERRORS = 20
-    
-    # 🟢 [NEW] 設備狀態追蹤器
-    # 格式: { uid: next_retry_timestamp }
-    offline_devices = {}
-    OFFLINE_RETRY_DELAY = 60 # 離線設備每 60 秒才試一次
-
-    # 4. 主迴圈
-    while True:
-        # A. 指令處理
+# 🟢 [關鍵] MQTT 橋接器：把 Paho 的訊息丟進 Async Queue
+def mqtt_bridge_callback(client, userdata, msg, loop, async_queue):
+    if msg:
         try:
-            while not mqtt_client.msg_queue.empty():
-                msg = mqtt_client.msg_queue.get()
-                if isinstance(msg, dict): t, p = msg.get('topic'), msg.get('payload')
-                else: t, p = getattr(msg, 'topic', None), getattr(msg, 'payload', None)
-                
-                if not t or p is None: continue
-                p_str = p.decode('utf-8').strip() if isinstance(p, bytes) else str(p).strip()
+            loop.call_soon_threadsafe(async_queue.put_nowait, msg)
+        except: pass
 
-                logger.info(f"📩 指令 [{t}]: {p_str}")
-                cmd_handler.process_message(t, p_str)
+async def task_mqtt_processor(queue, handler, lock):
+    """任務 A: MQTT 指令處理器 (即時回應)"""
+    logger.info("🟢 [Task] 指令監聽器啟動")
+    while not shutdown_event.is_set():
+        try:
+            # 等待指令 (非阻塞)
+            msg = await queue.get()
+            
+            # 解析
+            payload = msg.payload.decode().strip()
+            topic = msg.topic
+            logger.info(f"⚡ 插隊指令: {topic} -> {payload}")
 
+            # 🟢 [關鍵] 申請鎖 (如果輪詢正在進行，這裡會等待直到它釋放)
+            async with lock:
+                await handler.process_message(topic, payload)
+            
+            queue.task_done()
+            
+        except asyncio.CancelledError: break
         except Exception as e:
-            logger.error(f"MQTT 迴圈錯誤: {e}")
+            logger.error(f"指令任務異常: {e}")
 
-        # B. 輪詢數據
-        try:
-            any_success = False 
-            current_time = time.time()
+async def task_polling_loop(cfg, protocol, ha_mgr, lock):
+    """任務 B: 週期輪詢器"""
+    logger.info("🟢 [Task] 數據輪詢器啟動")
+    unit_ids = cfg['modbus']['unit_ids']
+    poll_int = cfg['polling']['poll_interval']
+    delay = cfg['polling']['delay_between_units']
+    
+    offline_devices = {} # 黑名單機制 (時間戳)
 
-            for uid in modbus_cfg['unit_ids']:
-                # 🟢 [優化] 檢查是否在黑名單中
-                if uid in offline_devices:
-                    if current_time < offline_devices[uid]:
-                        # 還沒到重試時間，跳過！
-                        continue
-                    else:
-                        logger.info(f"🔄 嘗試重連離線設備: #{uid}")
+    while not shutdown_event.is_set():
+        start_time = asyncio.get_running_loop().time()
+        
+        for uid in unit_ids:
+            if shutdown_event.is_set(): break
 
+            # 黑名單檢查
+            if uid in offline_devices:
+                if asyncio.get_running_loop().time() < offline_devices[uid]: continue
+                else: logger.info(f"🔄 重試設備 #{uid}")
+
+            # 🟢 [關鍵] 申請鎖 (確保總線獨佔)
+            async with lock:
                 try:
-                    raw_data = protocol.read_b1_data(uid)
-                    if raw_data:
-                        vals = protocol.decode(raw_data, rmap.B1_INFO)
-                        bits = protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
+                    data = await protocol.read_b1_data(uid)
+                    if data:
+                        vals = protocol.decode(data, rmap.B1_INFO)
+                        bits = protocol.decode(data, rmap.B3_STATUS_BITS, is_bits=True)
                         ha_mgr.publish_state(uid, vals, "state_b1")
                         ha_mgr.publish_state(uid, bits, "state_bits")
-                        any_success = True 
                         
-                        # 🟢 [優化] 成功讀取，從黑名單移除
-                        if uid in offline_devices:
-                            logger.info(f"✅ 設備 #{uid} 已恢復連線！")
-                            del offline_devices[uid]
+                        if uid in offline_devices: del offline_devices[uid]
                     
-                    time.sleep(app_config['polling']['delay_between_units'])
-                    
-                except Exception:
-                    # 🟢 [優化] 讀取失敗，加入黑名單
-                    logger.warning(f"⚠️ 設備 #{uid} 讀取失敗，將暫停輪詢 {OFFLINE_RETRY_DELAY} 秒")
-                    offline_devices[uid] = current_time + OFFLINE_RETRY_DELAY
-                    # 這裡不計入 watchdog 錯誤，因為單台斷線不代表系統掛掉
-            
-            # Watchdog 邏輯調整：
-            # 如果全部設備都在黑名單，或者全部讀取失敗，才算一次錯誤
-            if any_success or len(offline_devices) < len(modbus_cfg['unit_ids']):
-                consecutive_errors = 0 
-            else:
-                # 只有當「所有設備都連不上」時，才增加錯誤計數
-                consecutive_errors += 1 
-                if consecutive_errors % 5 == 0:
-                    logger.warning(f"⚠️ 全部設備皆無法連線 ({consecutive_errors}/{MAX_ERRORS})")
+                except Exception as e:
+                    logger.warning(f"⚠️ 設備 #{uid} 讀取失敗")
+                    offline_devices[uid] = asyncio.get_running_loop().time() + 60
 
-            if consecutive_errors >= MAX_ERRORS:
-                logger.critical("❌ 系統完全癱瘓 (RS485 卡死?)，強制重啟")
-                mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
-                sys.exit(1)
+            # 釋放鎖後，休息一下 (這段時間 MQTT 可以插隊)
+            await asyncio.sleep(delay)
 
-        except Exception as e:
-            logger.error(f"主迴圈錯誤: {e}")
-            consecutive_errors += 1
-            
-        time.sleep(app_config['polling']['poll_interval'])
+        # 確保週期時間
+        elapsed = asyncio.get_running_loop().time() - start_time
+        sleep_time = max(0.1, poll_int - elapsed)
+        await asyncio.sleep(sleep_time)
+
+async def async_main():
+    global logger
+    config = load_config()
+    if not config: return
+
+    debug_mode = config.get('system', {}).get('debug', False)
+    setup_global_logging(debug_mode)
+    logger = logging.getLogger("Main")
+    logger.info("🚀 啟動 V6.0 Asyncio 工業級架構")
+
+    # 建立 Async 物件
+    tcp = AsyncTCPClient(
+        config['modbus']['host'], 
+        config['modbus']['port'], 
+        config['modbus']['timeout']
+    )
+    protocol = AsyncAmpinvtProtocol(tcp, debug=debug_mode)
+    cmd_handler = AsyncCommandHandler(protocol, config.get('system', {}).get('timezone_offset', 8))
+    
+    # MQTT 橋接
+    mqtt_cfg = config['mqtt']
+    mqtt = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
+    ha_mgr = HAManager(mqtt, mqtt_cfg)
+    
+    # 建立 Queue 與 Loop 引用
+    loop = asyncio.get_running_loop()
+    mqtt_queue = asyncio.Queue()
+    
+    # 設定 Callback 橋接
+    mqtt.client.on_message = lambda c, u, m: mqtt_bridge_callback(c, u, m, loop, mqtt_queue)
+    
+    # 連線與訂閱
+    logger.info(f"👻 設定 LWT: {ha_mgr.availability_topic}")
+    mqtt.set_lwt(ha_mgr.availability_topic, payload="offline", retain=True)
+    mqtt.connect()
+    
+    # 這裡有點小技巧：因為我們無法在 on_connect 裡做非同步操作
+    # 所以我們直接在這裡訂閱，或者等一下再訂閱
+    ha_mgr.send_discovery(config['modbus']['unit_ids'])
+    mqtt.publish(ha_mgr.availability_topic, "online", retain=True)
+    for t in ["switch", "button", "number", "select"]:
+        mqtt.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
+
+    # 🟢 [核心] 建立 Modbus 互斥鎖
+    modbus_lock = asyncio.Lock()
+
+    # 啟動任務
+    t1 = asyncio.create_task(task_mqtt_processor(mqtt_queue, cmd_handler, modbus_lock))
+    t2 = asyncio.create_task(task_polling_loop(config, protocol, ha_mgr, modbus_lock))
+
+    # Signal 處理
+    def signal_handler():
+        logger.info("🛑 收到停止訊號")
+        shutdown_event.set()
+        t1.cancel()
+        t2.cancel()
+
+    loop.add_signal_handler(signal.SIGINT, signal_handler)
+    loop.add_signal_handler(signal.SIGTERM, signal_handler)
+
+    try:
+        await asyncio.gather(t1, t2)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        logger.info("👋 系統關閉，清理連線...")
+        await tcp.close()
+        mqtt.publish(ha_mgr.availability_topic, "offline", retain=True)
+        # mqtt.disconnect()
 
 if __name__ == "__main__":
-    main()
+    try:
+        # Windows 上可能需要 ProactorEventLoop，但 Docker (Linux) 不需要
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        pass
