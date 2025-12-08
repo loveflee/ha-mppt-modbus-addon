@@ -1,28 +1,24 @@
-name: "MPPT Modbus MQTT Poller"
-version: "5.7.1"
-slug: "mppt_modbus_mqtt_poller"
-description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數"
-url: "https://github.com/loveflee/ha-mppt-modbus-addon"
-documentation: "https://github.com/loveflee/ha-mppt-modbus-addon"
-
+name: "home assistant addon:Ampinvt MPPT Monitor"
+version: "7.0.0"
+slug: "ampinvt_mppt_monitor"
+description: "Advanced Ampinvt MPPT Monitor with Multi-language support and bi-directional control.透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數"
+url: "https://github.com/loveflee/ampinvt-ha-monitor"
 arch:
   - amd64
   - armv7
   - aarch64
-
 startup: services
 boot: auto
 init: false
-
-# 🟢 [預設值] 這些值會出現在安裝後的 Configuration 頁面
 options:
   debug: false
-  timezone_offset: 8          # 🟢 新增：時區補償 (小時)
-  reset_discovery_on_exit: false # 🟢 新增：結束時清除實體
+  timezone_offset: 8
+  reset_discovery_on_exit: false
+  language: "tw" # 🟢 預設語言
   modbus:
-    host: "modbus gateway ip"
+    host: "192.168.106.12"
     port: 502
-    unit_ids: "1, 2, 3, 4, 5" # 使用字串格式，方便使用者輸入
+    unit_ids: "1"
     timeout: 3.0
     retry_delay: 2.0
   mqtt:
@@ -36,16 +32,15 @@ options:
   polling:
     poll_interval: 3
     delay_between_units: 0.5
-
-# 🟢 [資料驗證] 定義每個欄位的類型
 schema:
   debug: bool
-  timezone_offset: int        # 🟢 定義為整數
+  timezone_offset: int
   reset_discovery_on_exit: bool
+  language: list(tw, en) # 🟢 下拉選單
   modbus:
     host: str
     port: int
-    unit_ids: str             # 字串輸入，例如 "1, 2, 3"
+    unit_ids: str
     timeout: float
     retry_delay: float
   mqtt:
@@ -59,10 +54,7 @@ schema:
   polling:
     poll_interval: int
     delay_between_units: float
-
 map:
   - config:rw
   - share:rw
   - ssl:ro
-
-ports: {}
