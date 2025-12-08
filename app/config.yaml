@@ -1,4 +1,4 @@
-name: "home assistant addon:Ampinvt MPPT Monitor"
+name: "MPPT Modbus MQTT Poller"
 version: "7.0.0"
 slug: "ampinvt_mppt_monitor"
 description: "Advanced Ampinvt MPPT Monitor with Multi-language support and bi-directional control.透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數"
