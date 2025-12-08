@@ -1,0 +1,72 @@
+name: "MPPT Modbus MQTT Poller"
+version: "7.0.3"
+slug: "mppt_modbus_mqtt_poller"
+description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數,Advanced MPPT Monitor with Multi-language support and bi-directional control."
+url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+
+arch:
+  - amd64
+  - armv7
+  - aarch64
+
+startup: services
+boot: auto
+init: false
+
+options:
+  debug: false
+  timezone_offset: 8
+  reset_discovery_on_exit: false
+  language: "tw"
+
+  modbus:
+    host: "192.168.106.12"
+    port: 502
+    unit_ids: "1"
+    timeout: 3.0
+    retry_delay: 2.0
+
+  mqtt:
+    broker: "core-mosquitto"
+    port: 1883
+    username: "mqtt_user"
+    password: "mqtt_password"
+    discovery_prefix: "homeassistant"
+    node_id: "wifi01"
+    device_name: "ampinvt_mppt"
+
+  polling:
+    poll_interval: 3
+    delay_between_units: 0.5
+
+schema:
+  debug: bool
+  timezone_offset: int
+  reset_discovery_on_exit: bool
+
+  language: list(tw|en)
+
+  modbus:
+    host: str
+    port: int
+    unit_ids: str
+    timeout: float
+    retry_delay: float
+
+  mqtt:
+    broker: str
+    port: int
+    username: str
+    password: str
+    discovery_prefix: str
+    node_id: str
+    device_name: str
+
+  polling:
+    poll_interval: int
+    delay_between_units: float
+
+map:
+  - config:rw
+  - share:rw
+  - ssl:ro
