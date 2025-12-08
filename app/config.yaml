@@ -17,7 +17,7 @@ options:
   debug: false
   timezone_offset: 8
   reset_discovery_on_exit: false
-  language: "tw"   # ✅ 預設值必須存在於 schema list 內
+  language: "tw"
 
   modbus:
     host: "192.168.106.12"
@@ -44,7 +44,6 @@ schema:
   timezone_offset: int
   reset_discovery_on_exit: bool
 
-  ✅✅✅ language 下拉選單「唯一正確寫法」 ✅✅✅
   language: list(tw|en)
 
   modbus:
