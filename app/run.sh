@@ -10,7 +10,8 @@ if [ -f "$OPTIONS_PATH" ]; then
     DEBUG_MODE=$(jq -r '.debug // false' $OPTIONS_PATH)
     TZ_OFFSET=$(jq -r '.timezone_offset // 8' $OPTIONS_PATH)
     RESET_ON_EXIT=$(jq -r '.reset_discovery_on_exit // false' $OPTIONS_PATH)
-    # 🟢 讀取語言
+    
+    # 🟢 讀取語言 (預設 tw)
     LANGUAGE=$(jq -r '.language // "tw"' $OPTIONS_PATH)
     
     MODBUS_HOST=$(jq -r '.modbus.host // "192.168.106.12"' $OPTIONS_PATH)
