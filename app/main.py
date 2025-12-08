@@ -3,13 +3,13 @@ import yaml
 import signal
 import sys
 import logging
+import importlib # 🟢 新增
 from core_logging import setup_global_logging
 from core_mqtt import RobustMQTTClient 
-from core_tcp import RobustTCPClient    # ✅ 確認使用同步 TCP
+from core_tcp import RobustTCPClient
 from ampinvt_proto import AmpinvtProtocol 
 from command_handler import CommandHandler
 from ha_manager import HAManager
-import mppt_register_map as rmap
 
 logger = None
 mqtt_client = None
@@ -19,6 +19,11 @@ app_config = None
 def load_config():
     try:
         with open("config.yaml", "r") as f: config = yaml.safe_load(f)
+        
+        # 🟢 讀取語系設定，預設 tw
+        if 'system' not in config: config['system'] = {}
+        if 'language' not in config['system']: config['system']['language'] = 'tw'
+
         modbus = config.get('modbus', {})
         raw = modbus.get('unit_ids', [1])
         if isinstance(raw, list):
@@ -49,32 +54,27 @@ def graceful_exit(signum, frame):
         mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
     sys.exit(0)
 
-# 🟢 [核心功能] 同步掃描設備資訊
-def scan_device_details(protocol, unit_ids):
-    """
-    啟動時掃描：取得電池串數與類型，用於生成智慧滑桿
-    """
+# 🟢 修改：需要傳入 rmap 物件
+def scan_device_details(protocol, unit_ids, rmap):
     logger.info("🔍 正在偵測設備資訊 (串數/類型)...")
     details = {} 
-    
     for uid in unit_ids:
         try:
-            # 嘗試讀取 3 次
             for _ in range(3):
                 data = protocol.read_b1_data(uid)
                 if data:
-                    b_type = data[8]  # 電池類型
-                    b_count = data[10] # 電池串數
-                    
+                    b_type = data[8]
+                    b_count = data[10]
                     if 1 <= b_count <= 16:
                         details[uid] = {"count": b_count, "type": b_type}
-                        t_str = "鋰電池" if b_type == 3 else "鉛酸"
+                        # 🟢 從 rmap 取得對應的文字
+                        t_map = rmap.B1_INFO[0]['map'] # 電池類型是第0個
+                        t_str = t_map.get(b_type, f"Type {b_type}")
                         logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count} 串 ({b_count*12}V)")
                         break
-                time.sleep(0.2) # 同步版需要休息一下
+                time.sleep(0.2)
         except Exception as e:
             logger.warning(f"⚠️ 設備 #{uid} 掃描失敗: {e}")
-            
     return details
 
 def main():
@@ -83,37 +83,45 @@ def main():
     app_config = load_config()
     if not app_config: sys.exit(1)
 
-    debug_mode = app_config.get('system', {}).get('debug', False)
+    sys_cfg = app_config.get('system', {})
+    debug_mode = sys_cfg.get('debug', False)
+    lang = sys_cfg.get('language', 'tw') # 🟢 取得語系
+
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
     
-    logger.info("🚀 啟動 V5.7.1 智慧電壓範圍限制版 (Sync Core)")
-    
+    logger.info(f"🚀 啟動 V7.0 多語系版 (Language: {lang})")
+
+    # 🟢 動態載入地圖模組
+    try:
+        module_name = f"mppt_map_{lang}"
+        rmap = importlib.import_module(module_name)
+        logger.info(f"✅ 成功載入地圖檔: {module_name}.py")
+    except ImportError:
+        logger.error(f"❌ 找不到語系檔 {module_name}.py，回退使用 tw")
+        import mppt_map_tw as rmap
+
     modbus_cfg = app_config['modbus']
     mqtt_cfg = app_config['mqtt']
-    sys_cfg = app_config.get('system', {})
     
     signal.signal(signal.SIGINT, graceful_exit)
     signal.signal(signal.SIGTERM, graceful_exit)
 
-    # 初始化模組 (同步版)
     tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
     mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
     protocol = AmpinvtProtocol(tcp, debug=debug_mode)
-    ha_mgr = HAManager(mqtt_client, mqtt_cfg)
-    cmd_handler = CommandHandler(protocol, ha_mgr, timezone_offset=sys_cfg.get('timezone_offset', 8))
+    
+    # 🟢 注入 rmap
+    ha_mgr = HAManager(mqtt_client, mqtt_cfg, rmap)
+    cmd_handler = CommandHandler(protocol, ha_mgr, rmap, timezone_offset=sys_cfg.get('timezone_offset', 8))
 
-    # 🟢 1. 執行啟動掃描
-    device_details = scan_device_details(protocol, modbus_cfg['unit_ids'])
+    device_details = scan_device_details(protocol, modbus_cfg['unit_ids'], rmap)
 
     logger.info(f"👻 設定 LWT: {ha_mgr.availability_topic}")
     mqtt_client.set_lwt(ha_mgr.availability_topic, payload="offline", retain=True)
 
-    # 2. MQTT 連線與 Discovery
     def on_mqtt_ready():
-        # 將掃描到的詳情傳給 HA Manager
         ha_mgr.send_discovery(modbus_cfg['unit_ids'], device_details)
-        
         mqtt_client.publish(ha_mgr.availability_topic, "online", retain=True)
         for t in ["switch", "button", "number", "select"]:
             mqtt_client.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
@@ -126,7 +134,6 @@ def main():
     MAX_ERRORS = 20
     offline_devices = {} 
 
-    # 🟢 插隊指令處理 (同步版)
     def process_commands():
         count = 0
         while not mqtt_client.msg_queue.empty():
@@ -142,18 +149,14 @@ def main():
             count += 1
         return count
 
-    # 3. 主迴圈
     while True:
         try:
             any_success = False 
             current_time = time.time()
 
             for uid in modbus_cfg['unit_ids']:
-                # 插隊檢查
-                if process_commands() > 0:
-                    time.sleep(0.2)
+                if process_commands() > 0: time.sleep(0.2)
 
-                # 輪詢邏輯
                 if uid in offline_devices:
                     if current_time < offline_devices[uid]: continue
                     else: logger.info(f"🔄 重試設備 #{uid}")
@@ -168,14 +171,11 @@ def main():
                         
                         if uid in offline_devices: del offline_devices[uid]
                         any_success = True
-                    
                     time.sleep(app_config['polling']['delay_between_units'])
-                    
                 except Exception:
                     logger.warning(f"⚠️ 設備 #{uid} 讀取失敗")
                     offline_devices[uid] = current_time + 60
             
-            # 看門狗
             if any_success or len(offline_devices) < len(modbus_cfg['unit_ids']):
                 consecutive_errors = 0 
             else:
