@@ -1,8 +1,9 @@
 name: "MPPT Modbus MQTT Poller"
-version: "7.0.0"
+version: "7.0.2"
 slug: "mppt_modbus_mqtt_poller"
-description: "Advanced MPPT Monitor with Multi-language support and bi-directional control."
-url: "https://github.com/loveflee/ampinvt-ha-monitor"
+description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數,Advanced MPPT Monitor with Multi-language support and bi-directional control."
+url: "https://github.com/loveflee/ha-mppt-modbus-addon"
+
 arch:
   - amd64
   - armv7
