@@ -1,0 +1,70 @@
+import socket
+import time
+import logging
+
+logger = logging.getLogger("TCP")
+
+class RobustTCPClient:
+    def __init__(self, host: str, port: int, timeout: float = 3.0):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self._sock = None
+
+    def connect(self) -> bool:
+        try:
+            self.close()
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._sock.settimeout(self.timeout)
+            self._sock.connect((self.host, self.port))
+            time.sleep(0.1) 
+            return True
+        except Exception:
+            self._sock = None
+            return False
+
+    def close(self):
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+                self._sock.close()
+            except: pass
+        self._sock = None
+
+    def flush_buffer(self):
+        if not self._sock: return
+        try:
+            self._sock.settimeout(0.01)
+            while True:
+                data = self._sock.recv(1024)
+                if not data: break
+        except: pass
+        finally:
+            if self._sock: self._sock.settimeout(self.timeout)
+
+    def send(self, data: bytes) -> bool:
+        if not self._sock:
+            if not self.connect(): return False
+        try:
+            self.flush_buffer()
+            self._sock.sendall(data)
+            return True
+        except Exception:
+            self.close()
+            return False
+
+    def recv_fixed(self, length: int) -> bytes:
+        if not self._sock: return None
+        data = b''
+        start_time = time.time()
+        try:
+            while len(data) < length:
+                if (time.time() - start_time) > self.timeout: return None
+                chunk = self._sock.recv(length - len(data))
+                if not chunk:
+                    self.close(); return None
+                data += chunk
+            return data
+        except Exception:
+            self.close(); return None
