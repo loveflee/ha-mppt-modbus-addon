@@ -1,5 +1,5 @@
 name: "Ampinvt MPPT Monitor"
-version: "7.0.0"
+version: "7.0.1"
 slug: "ampinvt_mppt_monitor"
 description: "Advanced MPPT Monitor with Multi-language support and bi-directional control."
 url: "https://github.com/loveflee/ampinvt-ha-monitor"
