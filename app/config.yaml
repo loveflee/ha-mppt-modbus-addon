@@ -1,5 +1,5 @@
 name: "MPPT Modbus MQTT Poller"
-version: "7.0.1"
+version: "7.0.0"
 slug: "mppt_modbus_mqtt_poller"
 description: "Advanced MPPT Monitor with Multi-language support and bi-directional control."
 url: "https://github.com/loveflee/ampinvt-ha-monitor"
@@ -10,11 +10,12 @@ arch:
 startup: services
 boot: auto
 init: false
+
 options:
   debug: false
   timezone_offset: 8
   reset_discovery_on_exit: false
-  language: "tw" # 🟢 預設語言
+  language: "tw"   # ✅ 預設值要存在於 schema 下拉選項內
   modbus:
     host: "192.168.106.12"
     port: 502
@@ -32,17 +33,24 @@ options:
   polling:
     poll_interval: 3
     delay_between_units: 0.5
+
 schema:
   debug: bool
   timezone_offset: int
   reset_discovery_on_exit: bool
-  language: list(tw, en) # 🟢 下拉選單
+
+  ✅✅✅ language: 下拉選單正確寫法 ✅✅✅
+  language:
+    - tw
+    - en
+
   modbus:
     host: str
     port: int
     unit_ids: str
     timeout: float
     retry_delay: float
+
   mqtt:
     broker: str
     port: int
@@ -51,9 +59,11 @@ schema:
     discovery_prefix: str
     node_id: str
     device_name: str
+
   polling:
     poll_interval: int
     delay_between_units: float
+
 map:
   - config:rw
   - share:rw
