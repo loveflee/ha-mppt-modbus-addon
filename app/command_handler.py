@@ -1,17 +1,15 @@
 import logging
 import time
-import mppt_register_map as rmap
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("CMD")
 
 class CommandHandler:
-    """
-    🧠 V5.7.1 指令處理器 (同步版 + 延遲寫入)
-    """
-    def __init__(self, protocol, ha_mgr, timezone_offset=8):
+    # 🟢 接收 rmap
+    def __init__(self, protocol, ha_mgr, rmap, timezone_offset=8):
         self.protocol = protocol
         self.ha_mgr = ha_mgr
+        self.rmap = rmap # 儲存
         self.tz_offset = timezone_offset
 
     def process_message(self, topic: str, payload: str):
@@ -30,18 +28,17 @@ class CommandHandler:
         except Exception as e:
             logger.error(f"指令處理錯誤: {e}")
 
-    # 🟢 [核心] 寫入後驗證機制
     def _write_and_verify(self, uid, write_func, *args):
-        time.sleep(0.3) # 讓總線冷卻
-        
+        time.sleep(0.3)
         if write_func(*args):
             logger.info("⚡ 寫入成功，準備回讀狀態...")
             time.sleep(0.5) 
             raw_data = self.protocol.read_b1_data(uid)
             if raw_data:
                 logger.info("✅ 回讀成功，更新 HA")
-                vals = self.protocol.decode(raw_data, rmap.B1_INFO)
-                bits = self.protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
+                # 使用 self.rmap
+                vals = self.protocol.decode(raw_data, self.rmap.B1_INFO)
+                bits = self.protocol.decode(raw_data, self.rmap.B3_STATUS_BITS, is_bits=True)
                 self.ha_mgr.publish_state(uid, vals, "state_b1")
                 self.ha_mgr.publish_state(uid, bits, "state_bits")
             else:
@@ -49,20 +46,18 @@ class CommandHandler:
         else:
             logger.warning("⚠️ 寫入無回應，嘗試重送...")
             time.sleep(1.0)
-            if write_func(*args):
-                logger.info("✅ 重送成功")
-            else:
-                logger.error("❌ 寫入最終失敗")
+            if write_func(*args): logger.info("✅ 重送成功")
+            else: logger.error("❌ 寫入最終失敗")
 
     def _handle_switch(self, uid, key, payload):
-        switch_def = rmap.CONTROL_SWITCHES.get(key)
+        switch_def = self.rmap.CONTROL_SWITCHES.get(key)
         if switch_def:
             cmd = switch_def['on_code'] if payload.upper() == "ON" else switch_def['off_code']
             logger.info(f"👉 [Switch] 切換 {key} -> {payload}")
             self._write_and_verify(uid, self.protocol.write_c0_command, uid, cmd)
 
     def _handle_button(self, uid, key):
-        btn_def = rmap.CONTROL_BUTTONS.get(key)
+        btn_def = self.rmap.CONTROL_BUTTONS.get(key)
         if btn_def:
             if btn_def.get('code') == 0xDF:
                 local_dt = datetime.now(timezone.utc) + timedelta(hours=self.tz_offset)
@@ -86,9 +81,9 @@ class CommandHandler:
         if target:
             map_dict = None
             link = target.get('ha', {}).get('link_b1')
-            for b in rmap.B1_INFO:
+            # 使用 self.rmap
+            for b in self.rmap.B1_INFO:
                 if b['key'] == link: map_dict = b.get('map'); break
-            
             val = None
             if map_dict:
                 for k, v in map_dict.items():
@@ -96,12 +91,11 @@ class CommandHandler:
                 if val is None and ":" in payload:
                     try: val = int(payload.split(':')[0])
                     except: pass
-            
             if val is not None:
                 logger.info(f"👉 [Select] 設定 {key} = {payload} (ID={val})")
                 self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, 1, target['valid_bytes'])
 
     def _find_d0(self, key):
-        for c, i in rmap.D0_PARAMS.items():
+        for c, i in self.rmap.D0_PARAMS.items():
             if i['key'] == key: return i, c
         return None, None
