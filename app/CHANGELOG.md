@@ -9,11 +9,11 @@ All notable changes to the "Ampinvt MPPT Monitor" project will be documented in 
 
 * **Dual Dynamic Range (雙重動態範圍)**
     * **EN**: 
-        * **Auto Detection**: Automatically scans battery count (1-16S) and type (Lead-Acid/Lithium) on startup.
+        * **Auto Detection**: Automatically scans battery count (1-8S) and type (Lead-Acid/Lithium) on startup.
         * **Smart Slider**: Automatically scales Home Assistant voltage sliders based on battery count (e.g., 12V range vs 48V range).
         * **Lithium Safety**: Enforces a strict 14.6V limit (per 12V unit) for Lithium Iron Phosphate (LiFePO4) batteries to prevent overcharging.
     * **TW**: 
-        * **自動偵測**: 啟動時自動掃描電池串數 (1-16串) 與類型 (鉛酸/鋰電)。
+        * **自動偵測**: 啟動時自動掃描電池串數 (1-8串) 與類型 (鉛酸/鋰電)。
         * **智慧滑桿**: 根據電池串數自動縮放 HA 電壓設定範圍 (例如 12V 系統與 48V 系統會看到不同的安全範圍)。
         * **鐵鋰安全**: 針對磷酸鐵鋰電池實施嚴格的電壓上限 (每 12V 單位限制在 14.6V)，防止誤操作導致過充危險。
 
