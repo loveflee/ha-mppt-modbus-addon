@@ -8,6 +8,7 @@ arch:
   - amd64
   - armv7
   - aarch64
+
 startup: services
 boot: auto
 init: false
@@ -16,13 +17,15 @@ options:
   debug: false
   timezone_offset: 8
   reset_discovery_on_exit: false
-  language: "tw"
+  language: "tw"   # ✅ 預設值必須存在於 schema list 內
+
   modbus:
     host: "192.168.106.12"
     port: 502
     unit_ids: "1"
     timeout: 3.0
     retry_delay: 2.0
+
   mqtt:
     broker: "core-mosquitto"
     port: 1883
@@ -31,6 +34,7 @@ options:
     discovery_prefix: "homeassistant"
     node_id: "wifi01"
     device_name: "ampinvt_mppt"
+
   polling:
     poll_interval: 3
     delay_between_units: 0.5
@@ -40,9 +44,8 @@ schema:
   timezone_offset: int
   reset_discovery_on_exit: bool
 
-  language:
-    - tw
-    - en
+  ✅✅✅ language 下拉選單「唯一正確寫法」 ✅✅✅
+  language: list(tw|en)
 
   modbus:
     host: str
