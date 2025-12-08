@@ -1,6 +1,6 @@
-name: "Ampinvt MPPT Monitor"
+name: "MPPT Modbus MQTT Poller"
 version: "7.0.1"
-slug: "ampinvt_mppt_monitor"
+slug: "mppt_modbus_mqtt_poller"
 description: "Advanced MPPT Monitor with Multi-language support and bi-directional control."
 url: "https://github.com/loveflee/ampinvt-ha-monitor"
 arch:
