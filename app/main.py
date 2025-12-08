@@ -3,7 +3,12 @@ import yaml
 import signal
 import sys
 import logging
-import importlib # 🟢 [NEW] 動態載入
+import importlib
+import os
+import struct # 🟢 新增 struct 用於解碼
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from core_logging import setup_global_logging
 from core_mqtt import RobustMQTTClient 
 from core_tcp import RobustTCPClient
@@ -18,9 +23,9 @@ app_config = None
 
 def load_config():
     try:
-        with open("config.yaml", "r") as f: config = yaml.safe_load(f)
+        config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+        with open(config_path, "r") as f: config = yaml.safe_load(f)
         
-        # 🟢 讀取語系設定，預設 tw
         if 'system' not in config: config['system'] = {}
         if 'language' not in config['system']: config['system']['language'] = 'tw'
 
@@ -54,23 +59,35 @@ def graceful_exit(signum, frame):
         mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
     sys.exit(0)
 
-# 🟢 [修改] 傳入 rmap 參數
+# 🟢 [修改] 掃描設備詳情 (增加硬體電流讀取)
 def scan_device_details(protocol, unit_ids, rmap):
-    logger.info("🔍 正在偵測設備資訊 (串數/類型)...")
+    logger.info("🔍 正在偵測設備資訊 (串數/類型/硬體限流)...")
     details = {} 
     for uid in unit_ids:
         try:
             for _ in range(3):
                 data = protocol.read_b1_data(uid)
                 if data:
+                    # 1. 電池類型 (Offset 8) & 串數 (Offset 10)
                     b_type = data[8]
                     b_count = data[10]
+                    
+                    # 2. 🟢 硬體最大電流 (Offset 24, 2 Bytes)
+                    # 使用 struct 解出 16-bit int
+                    hw_max_raw = struct.unpack('>H', data[24:26])[0]
+                    hw_max_amp = round(hw_max_raw / 100.0, 1) # Scale 100
+
                     if 1 <= b_count <= 16:
-                        details[uid] = {"count": b_count, "type": b_type}
-                        # 從目前載入的 rmap 取得文字
-                        type_map = rmap.B1_INFO[0].get('map', {})
-                        t_str = type_map.get(b_type, str(b_type))
-                        logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count}S ({b_count*12}V)")
+                        # 將所有資訊存入 details
+                        details[uid] = {
+                            "count": b_count, 
+                            "type": b_type,
+                            "hw_max": hw_max_amp # 🟢 儲存硬體上限
+                        }
+                        
+                        t_map = rmap.B1_INFO[0].get('map', {})
+                        t_str = t_map.get(b_type, str(b_type))
+                        logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count}S, Max {hw_max_amp}A")
                         break
                 time.sleep(0.2)
         except Exception as e:
@@ -85,21 +102,19 @@ def main():
 
     sys_cfg = app_config.get('system', {})
     debug_mode = sys_cfg.get('debug', False)
-    lang = sys_cfg.get('language', 'tw') # 🟢 取得語系設定
+    lang = sys_cfg.get('language', 'tw')
 
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
     
-    logger.info(f"🚀 啟動 V7.0 多語系版 (Language: {lang})")
+    logger.info(f"🚀 啟動 V7.2 硬體限流版 (Language: {lang})")
 
-    # 🟢 動態載入地圖模組
     try:
         module_name = f"language.{lang}"
-        # 這裡假設 language 資料夾內有 tw.py, en.py
         rmap = importlib.import_module(module_name)
-        logger.info(f"✅ 成功載入語系檔: {module_name}")
+        logger.info(f"✅ 成功載入語系: {module_name}")
     except ImportError as e:
-        logger.error(f"❌ 找不到語系檔 {module_name} ({e})，回退使用 tw")
+        logger.error(f"❌ 找不到語系 {module_name} ({e})，使用 tw")
         import language.tw as rmap
 
     modbus_cfg = app_config['modbus']
@@ -112,7 +127,6 @@ def main():
     mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
     protocol = AmpinvtProtocol(tcp, debug=debug_mode)
     
-    # 🟢 注入 rmap
     ha_mgr = HAManager(mqtt_client, mqtt_cfg, rmap)
     cmd_handler = CommandHandler(protocol, ha_mgr, rmap, timezone_offset=sys_cfg.get('timezone_offset', 8))
 
