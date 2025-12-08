@@ -3,7 +3,7 @@ import yaml
 import signal
 import sys
 import logging
-import importlib # 🟢 新增
+import importlib # 🟢 [NEW] 動態載入
 from core_logging import setup_global_logging
 from core_mqtt import RobustMQTTClient 
 from core_tcp import RobustTCPClient
@@ -54,7 +54,7 @@ def graceful_exit(signum, frame):
         mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
     sys.exit(0)
 
-# 🟢 修改：需要傳入 rmap 物件
+# 🟢 [修改] 傳入 rmap 參數
 def scan_device_details(protocol, unit_ids, rmap):
     logger.info("🔍 正在偵測設備資訊 (串數/類型)...")
     details = {} 
@@ -67,10 +67,10 @@ def scan_device_details(protocol, unit_ids, rmap):
                     b_count = data[10]
                     if 1 <= b_count <= 16:
                         details[uid] = {"count": b_count, "type": b_type}
-                        # 🟢 從 rmap 取得對應的文字
-                        t_map = rmap.B1_INFO[0]['map'] # 電池類型是第0個
-                        t_str = t_map.get(b_type, f"Type {b_type}")
-                        logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count} 串 ({b_count*12}V)")
+                        # 從目前載入的 rmap 取得文字
+                        type_map = rmap.B1_INFO[0].get('map', {})
+                        t_str = type_map.get(b_type, str(b_type))
+                        logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count}S ({b_count*12}V)")
                         break
                 time.sleep(0.2)
         except Exception as e:
@@ -85,7 +85,7 @@ def main():
 
     sys_cfg = app_config.get('system', {})
     debug_mode = sys_cfg.get('debug', False)
-    lang = sys_cfg.get('language', 'tw') # 🟢 取得語系
+    lang = sys_cfg.get('language', 'tw') # 🟢 取得語系設定
 
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
@@ -94,12 +94,13 @@ def main():
 
     # 🟢 動態載入地圖模組
     try:
-        module_name = f"mppt_map_{lang}"
+        module_name = f"language.{lang}"
+        # 這裡假設 language 資料夾內有 tw.py, en.py
         rmap = importlib.import_module(module_name)
-        logger.info(f"✅ 成功載入地圖檔: {module_name}.py")
-    except ImportError:
-        logger.error(f"❌ 找不到語系檔 {module_name}.py，回退使用 tw")
-        import mppt_map_tw as rmap
+        logger.info(f"✅ 成功載入語系檔: {module_name}")
+    except ImportError as e:
+        logger.error(f"❌ 找不到語系檔 {module_name} ({e})，回退使用 tw")
+        import language.tw as rmap
 
     modbus_cfg = app_config['modbus']
     mqtt_cfg = app_config['mqtt']
