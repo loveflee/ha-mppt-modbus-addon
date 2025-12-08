@@ -1,7 +1,51 @@
 # Changelog / 變更日誌
 
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
-本專案的所有重大變更都將記錄在此文件中。
+本專案的所有重大變更都將記錄在此文件中
+
+## [7.0.3] - Hardware Limit & Safety Edition (2025-12-08)
+
+### 🚀 Major Features (核心功能)
+
+* **Hardware Current Limit (硬體電流限流)**
+    * **EN**: 
+        * **Auto Detection**: Reads the hardware maximum charging current (Offset 24) from the device during startup.
+        * **Dynamic Cap**: Automatically caps the "Set Max Charge Current" slider in Home Assistant to the device's physical limit (e.g., 60A), preventing invalid configuration.
+    * **TW**: 
+        * **自動偵測**: 啟動時自動讀取設備的「硬體最大充電電流」(Offset 24)。
+        * **動態上限**: 自動將 Home Assistant 上「設定最大充電電流」滑桿的上限鎖定為設備的硬體極限 (例如 60A)，防止使用者設定超出規格的數值。
+
+* **Directory Restructure (目錄結構重組)**
+    * **EN**: Moved core logic to `/app` subdirectory while keeping `config.yaml` and `run.sh` at root to comply with Home Assistant Add-on repository standards.
+    * **TW**: 將核心程式碼移至 `/app` 子目錄，並將 `config.yaml` 與 `run.sh` 保留在根目錄，以符合 Home Assistant Add-on 倉庫的標準結構。
+
+* **Multi-language Support (多語系支援)**
+    * **EN**: Added `language` option in `config.yaml` (tw/en). The system dynamically loads register maps, allowing users to switch between Traditional Chinese and English UIs.
+    * **TW**: 在 `config.yaml` 新增 `language` 選項 (tw/en)。系統可動態載入暫存器地圖，允許使用者切換繁體中文或英文介面。
+
+### 🛡️ Reliability (可靠性)
+
+* **Dual Dynamic Range (雙重動態範圍)**
+    * **EN**: Smartly adjusts voltage sliders based on battery type (Lead-Acid vs. Lithium) and string count. Lithium mode enforces a strict 14.6V/12V safety limit.
+    * **TW**: 根據電池類型 (鉛酸/鋰電) 與串數智慧調整電壓滑桿範圍。鋰電模式下強制實施 14.6V/12V 的安全上限。
+
+* **Interjection Polling (插隊輪詢)**
+    * **EN**: Prioritizes MQTT commands over periodic polling to ensure instant control response (< 0.5s latency).
+    * **TW**: 優先處理 MQTT 指令，確保控制操作即時響應 (延遲小於 0.5 秒)。
+
+### 🐛 Fixes (修正)
+
+* **EN**:
+    * Fixed HA Add-on installation failure due to incorrect `config.yaml` path.
+    * Fixed `KeyError` in HA Manager when registering switches.
+    * Added `struct` import to properly decode hardware current limit (16-bit integer).
+* **TW**:
+    * 修正因 `config.yaml` 路徑錯誤導致 HA Add-on 無法安裝的問題。
+    * 修正 HA Manager 在註冊開關時發生的 `KeyError`。
+    * 新增 `struct` 模組引用，以正確解碼硬體電流限制數值 (16位元整數)。
+
+---
+
 
 ## [5.7.1] - Smart Voltage Range Edition (2025-12-08)
 
