@@ -3,12 +3,11 @@ from core_mqtt import RobustMQTTClient
 
 class HAManager:
     """
-    🏠 HA Manager V7.0 (Multi-language Support)
+    🏠 HA Manager V7.2 (Hardware Limit Support)
     """
-    # 🟢 接收 rmap 物件
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
         self.mqtt = mqtt
-        self.rmap = rmap # 儲存地圖物件
+        self.rmap = rmap 
         self.prefix = config['discovery_prefix']
         self.node_id = config.get('node_id', 'wifi01')
         self.dev_name = config['device_name']
@@ -23,19 +22,20 @@ class HAManager:
         }
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        print("📤 發送 HA Discovery...")
+        print("📤 發送 HA Discovery (V7.2 硬體限流)...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
             dev_info = self._get_dev_info(uid)
-            details = device_details.get(uid, {'count': 1, 'type': 0})
+            details = device_details.get(uid, {'count': 1, 'type': 0, 'hw_max': 60.0}) # 預設 60A
             
-            # 使用 self.rmap
+            # Sensors
             for item in self.rmap.B1_INFO:
                 if "ha" in item: self._pub(uid, entity_base, item, dev_info, "sensor", "state_b1")
             for key, item in self.rmap.B3_STATUS_BITS.items():
                 item['key'] = key 
                 self._pub(uid, entity_base, item, dev_info, "binary_sensor", "state_bits", is_bin=True)
 
+            # Controls
             if hasattr(self.rmap, 'CONTROL_SWITCHES'):
                 for key, item in self.rmap.CONTROL_SWITCHES.items():
                     item['key'] = key
@@ -47,18 +47,19 @@ class HAManager:
             if hasattr(self.rmap, 'D0_PARAMS'):
                 for code, item in self.rmap.D0_PARAMS.items():
                     ha_type = item['ha']['type']
-                    if ha_type == 'number': self._pub_number(uid, entity_base, item, dev_info, details)
-                    elif ha_type == 'select': self._pub_select(uid, entity_base, item, dev_info)
+                    if ha_type == 'number': 
+                        self._pub_number(uid, entity_base, item, dev_info, details)
+                    elif ha_type == 'select': 
+                        self._pub_select(uid, entity_base, item, dev_info)
 
     def _get_dev_info(self, uid):
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT Controller #{uid}",
-            "model": "Ampinvt V7.0",
+            "model": "Ampinvt V7.2",
             "manufacturer": "ampinvt",
         }
 
-    # ... (其他方法 _pub, _pub_switch 等維持原樣，不需更動，因為傳入的 item 已經是來自正確的 rmap) ...
     def _add_availability(self, payload):
         payload["availability_topic"] = self.availability_topic
         payload["payload_available"] = "online"
@@ -108,19 +109,30 @@ class HAManager:
     def _pub_number(self, uid, entity_base, item, dev_info, details):
         key = item['key']; ha_conf = item['ha']
         topic = f"{self.prefix}/number/{entity_base}/{key}/config"
+        
         b_count = details.get('count', 1)
         b_type = details.get('type', 0)
+        hw_max = details.get('hw_max', 60.0) # 🟢 取得硬體限流值
         
+        # 預設範圍
+        min_val = ha_conf.get('base_min', ha_conf.get('min', 0))
+        max_val = ha_conf.get('base_max', ha_conf.get('max', 100))
+        
+        # 1. 鋰電專用範圍
         if b_type == 3 and 'li_base_min' in ha_conf:
             min_val = ha_conf['li_base_min']
             max_val = ha_conf['li_base_max']
-        else:
-            min_val = ha_conf.get('base_min', ha_conf.get('min', 0))
-            max_val = ha_conf.get('base_max', ha_conf.get('max', 100))
             
+        # 2. 電壓倍率計算 (僅針對有 base_min 的電壓項目)
         if 'base_min' in ha_conf:
             min_val *= b_count
             max_val *= b_count
+            
+        # 3. 🟢 [新增] 電流限流覆寫
+        # 如果是設定電流 (set_max_charge_curr)，將上限鎖死為硬體極限
+        if key == "set_max_charge_curr":
+            max_val = hw_max
+            # print(f"🔒 設備 {uid} 電流設定上限已鎖定為 {hw_max}A")
             
         payload = {
             "name": item['name'], "unique_id": f"{entity_base}_{key}_num", "device": dev_info,
