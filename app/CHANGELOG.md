@@ -2,10 +2,6 @@
 
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 本專案的所有重大變更都將記錄在此文件中。
-# Changelog / 變更日誌
-
-All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
-本專案的所有重大變更都將記錄在此文件中。
 
 ## [5.7.1] - Smart Voltage Range Edition (2025-12-08)
 
