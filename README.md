@@ -41,6 +41,29 @@
 
 ---
 
-## 🛠️ 安裝與設置 (Installation)
 
-請參閱 `INSTALL.md` (或 \[GitHub Link\]) 了解詳細的 Docker Compose 或 HA Add-on 安裝步驟。
+# 🛠️ 安裝與啟動指南 (Installation & Setup Guide)
+
+本文件提供 Ampinvt MPPT 監控系統 V7.7 版本的啟動步驟。本系統建議在 Home Assistant OS 或 Proxmox (搭配 Docker) 環境下運行。
+
+## 1. 環境準備 (Prerequisites)
+
+* **EN**: **MQTT Broker**: Your Home Assistant must have Mosquitto Broker running.
+* **TW**: **MQTT Broker**: 您的 Home Assistant 必須安裝並運行 Mosquitto Broker (或任何 MQTT 服務)。
+
+* **EN**: **Modbus Gateway**: A stable Modbus-TCP gateway (e.g., USR-TCP232-410S) is required.
+* **TW**: **Modbus 網關**: 您需要一個穩定的 Modbus-TCP 網關 (例如 USR-TCP232-410S, USR-WIFI232-G2 等)。
+
+* **EN**: **Docker Environment**: The host machine must have Docker or Docker Compose installed.
+* **TW**: **Docker 環境**: 主機需安裝 Docker 或 Docker Compose。
+
+---
+
+## 2. 檔案配置 (File Configuration)
+
+請在專案根目錄下創建或修改以下三個關鍵文件：
+
+### A. `requirements.txt` (相依性 / Dependencies)
+
+* **EN**: Ensure Flask is added for future Web UI expansion.
+* **TW**: 請確保 Flask 已經被加入，以便未來擴充 Web 介面。
