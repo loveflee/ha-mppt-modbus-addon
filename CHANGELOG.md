@@ -3,6 +3,32 @@
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 本專案的所有重大變更都將記錄在此文件中
 
+## [7.7.0] - Extreme Resilience Edition (2025-12-09)
+
+### 🛡️ Resilience & Safety (韌性與安全性)
+
+* **Multi-stage Failure Backoff (多階段懲罰性退避)**
+
+  * **EN**: Implemented two failure thresholds (e.g., 10 and 20). After 10 consecutive failures, the retry interval is dramatically increased (e.g., to 1 hour) to reduce system load.
+  * **TW**: 實作多階段故障退避。在連續失敗 10 次後，重試間隔會大幅增加 (例如增加到 1 小時)，以減少系統在無效連線上消耗的資源。
+
+* **Dedicated Connectivity Sensor (專屬連線狀態感知器)**
+
+  * **EN**: Added a `binary_sensor.connectivity` for each device. This explicitly tells the user whether the device is reachable, without confusing them with the `Unavailable` state of the main entity.
+  * **TW**: 新增專屬的「連線狀態」二元感測器。此實體會明確告知使用者設備是否可達，比監控主實體的「不可用」狀態更清晰直觀。
+
+* **Zero Trust Startup (零信任啟動)**
+
+  * **EN**: Maintains the principle of not registering any HA entities until a successful, verified read of the device's hardware specifications (V7.4 feature).
+  * **TW**: 延續零信任啟動原則。只有成功驗證設備的硬體規格後，才發送註冊資訊。
+
+### 🛠️ Core Enhancements (核心增強)
+
+* **Robust TCP Upgrade (強化 TCP 升級)**
+
+  * **EN**: Updated `core_tcp.py` with enhanced `flush_buffer` (to clear residual noise) and strict timeout checking in `recv_fixed` to prevent kernel-level hangs.
+  * **TW**: 升級 `core_tcp.py`，新增強化的 `flush_buffer` 機制，並在接收時實施更嚴格的超時檢查，以防止底層系統卡頓。
+
 ## [7.0.3] - Hardware Limit & Safety Edition (2025-12-08)
 
 ### 🚀 Major Features (核心功能)
