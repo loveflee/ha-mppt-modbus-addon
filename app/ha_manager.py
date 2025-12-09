@@ -1,9 +1,15 @@
 import json
 from core_mqtt import RobustMQTTClient
+import logging # 確保 logging 引入
+
+logger = logging.getLogger("HA_MGR") # 確保 Logger 設置正確
 
 class HAManager:
+    """
+    🏠 HA Manager V7.7 (Device Availability & Hardware Limit)
+    """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
-        self.mqtt = mqtt
+        self.mqtt = mqtt # 🟢 正確名稱是 self.mqtt
         self.rmap = rmap 
         self.prefix = config['discovery_prefix']
         self.node_id = config.get('node_id', 'wifi01')
@@ -63,7 +69,8 @@ class HAManager:
     def publish_connectivity_state(self, uid, is_connected: bool):
         topic = f"{self.base_topic}_{uid}/connectivity_state"
         payload = "ON" if is_connected else "OFF"
-        self.mqtt_client.publish(topic, payload, qos=1, retain=True)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, payload, qos=1, retain=True)
 
     def _pub_connectivity(self, uid, entity_base, dev_info):
         topic = f"{self.prefix}/binary_sensor/{entity_base}/connectivity/config"
@@ -77,11 +84,13 @@ class HAManager:
             "payload_off": "OFF"
         }
         payload["availability_topic"] = self.global_avail_topic
-        self.mqtt_client.publish(topic, json.dumps(payload), qos=1, retain=True)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def publish_device_availability(self, uid, status):
         topic = f"{self.base_topic}_{uid}/availability"
-        self.mqtt_client.publish(topic, status, qos=1, retain=True)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, status, qos=1, retain=True)
 
     def _add_availability(self, payload, uid):
         device_avail = f"{self.base_topic}_{uid}/availability"
@@ -94,7 +103,8 @@ class HAManager:
         return payload
 
     def _publish_config(self, topic, payload):
-        self.mqtt_client.publish(topic, json.dumps(payload), qos=1, retain=True)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def _pub(self, uid, entity_base, item, dev_info, domain, sub_topic, is_bin=False):
         key = item['key']
@@ -171,7 +181,8 @@ class HAManager:
 
     def publish_state(self, uid, data, sub_topic):
         topic = f"{self.base_topic}/{uid}/{sub_topic}"
-        self.mqtt_client.publish(topic, json.dumps(data), qos=0, retain=False)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, json.dumps(data), qos=0, retain=False)
     
     def clear_all_discovery(self, unit_ids: list):
         print("🧹 正在執行 HA 實體清除...")
@@ -193,4 +204,5 @@ class HAManager:
 
     def _clear(self, entity_base, key, domain):
         topic = f"{self.prefix}/{domain}/{entity_base}/{key}/config"
-        self.mqtt_client.publish(topic, "", qos=1, retain=True)
+        # 🟢 [修正] 使用 self.mqtt
+        self.mqtt.publish(topic, "", qos=1, retain=True)
