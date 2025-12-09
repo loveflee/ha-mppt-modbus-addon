@@ -5,8 +5,10 @@ import sys
 import logging
 import importlib
 import os
-import struct # 🟢 新增 struct 用於解碼
+import struct
+from typing import Dict, Set
 
+# 確保路徑正確
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core_logging import setup_global_logging
@@ -21,14 +23,24 @@ mqtt_client = None
 ha_mgr = None
 app_config = None
 
+discovered_devices: Set[int] = set()       
+device_details_cache: Dict[int, Dict] = {} 
+
 def load_config():
+    """載入設定，並處理黑名單預設值"""
     try:
         config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
         with open(config_path, "r") as f: config = yaml.safe_load(f)
-        
         if 'system' not in config: config['system'] = {}
         if 'language' not in config['system']: config['system']['language'] = 'tw'
-
+        
+        # 🟢 [優化] 處理黑名單設定，確保數值存在
+        if 'blacklist' not in config: config['blacklist'] = {}
+        config['blacklist']['fail_threshold'] = config['blacklist'].get('fail_threshold', 20)
+        config['blacklist']['isolation_time'] = config['blacklist'].get('isolation_time', 60)
+        config['blacklist']['long_delay_threshold'] = config['blacklist'].get('long_delay_threshold', 10)
+        config['blacklist']['long_delay'] = config['blacklist'].get('long_delay', 3600)
+        
         modbus = config.get('modbus', {})
         raw = modbus.get('unit_ids', [1])
         if isinstance(raw, list):
@@ -50,52 +62,38 @@ def load_config():
         return None
 
 def graceful_exit(signum, frame):
+    """處理程序終止訊號"""
     logger.info("🛑 收到關閉指令...")
     if app_config and ha_mgr and mqtt_client:
         if app_config.get('mqtt', {}).get('reset_discovery_on_exit'):
-            try: ha_mgr.clear_all_discovery(app_config['modbus']['unit_ids']); time.sleep(1)
+            try: ha_mgr.clear_all_discovery(list(discovered_devices)); time.sleep(1)
             except: pass
     if mqtt_client:
-        mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
+        logger.info("👋 系統關閉，發送全域離線 LWT")
+        mqtt_client.publish(ha_mgr.global_avail_topic, "offline", retain=True)
     sys.exit(0)
 
-# 🟢 [修改] 掃描設備詳情 (增加硬體電流讀取)
-def scan_device_details(protocol, unit_ids, rmap):
-    logger.info("🔍 正在偵測設備資訊 (串數/類型/硬體限流)...")
-    details = {} 
-    for uid in unit_ids:
+def scan_single_device(protocol, uid, rmap):
+    """啟動時，掃描單個設備以識別類型，只嘗試 3 次"""
+    MAX_RETRIES = 3 
+    for attempt in range(MAX_RETRIES):
         try:
-            for _ in range(3):
-                data = protocol.read_b1_data(uid)
-                if data:
-                    # 1. 電池類型 (Offset 8) & 串數 (Offset 10)
-                    b_type = data[8]
-                    b_count = data[10]
-                    
-                    # 2. 🟢 硬體最大電流 (Offset 24, 2 Bytes)
-                    # 使用 struct 解出 16-bit int
-                    hw_max_raw = struct.unpack('>H', data[24:26])[0]
-                    hw_max_amp = round(hw_max_raw / 100.0, 1) # Scale 100
-
-                    if 1 <= b_count <= 16:
-                        # 將所有資訊存入 details
-                        details[uid] = {
-                            "count": b_count, 
-                            "type": b_type,
-                            "hw_max": hw_max_amp # 🟢 儲存硬體上限
-                        }
-                        
-                        t_map = rmap.B1_INFO[0].get('map', {})
-                        t_str = t_map.get(b_type, str(b_type))
-                        logger.info(f"✅ 設備 #{uid}: {t_str}, {b_count}S, Max {hw_max_amp}A")
-                        break
-                time.sleep(0.2)
-        except Exception as e:
-            logger.warning(f"⚠️ 設備 #{uid} 掃描失敗: {e}")
-    return details
+            data = protocol.read_b1_data(uid)
+            if data:
+                b_type = data[8]; b_count = data[10]; hw_max_raw = struct.unpack('>H', data[24:26])[0]
+                hw_max_amp = round(hw_max_raw / 100.0, 1)
+                if 1 <= b_count <= 16:
+                    t_map = rmap.B1_INFO[0].get('map', {})
+                    t_str = t_map.get(b_type, str(b_type))
+                    logger.info(f"✅ 設備 #{uid} 識別成功: {t_str}, {b_count}S, Max {hw_max_amp}A")
+                    return { "count": b_count, "type": b_type, "hw_max": hw_max_amp }
+        except Exception: pass
+        time.sleep(0.5)
+    logger.warning(f"⚠️ 設備 #{uid} 啟動掃描失敗 (無回應)，暫不註冊，等待上線...")
+    return None
 
 def main():
-    global mqtt_client, ha_mgr, app_config, logger
+    global mqtt_client, ha_mgr, app_config, logger, discovered_devices, device_details_cache
     
     app_config = load_config()
     if not app_config: sys.exit(1)
@@ -103,11 +101,18 @@ def main():
     sys_cfg = app_config.get('system', {})
     debug_mode = sys_cfg.get('debug', False)
     lang = sys_cfg.get('language', 'tw')
+    
+    # 🟢 [新增] 取得黑名單參數
+    BL_CFG = app_config['blacklist']
+    FAIL_THRESHOLD = BL_CFG['fail_threshold']
+    INITIAL_DELAY = BL_CFG['isolation_time']
+    LONG_DELAY_THRESHOLD = BL_CFG['long_delay_threshold']
+    LONG_DELAY = BL_CFG['long_delay']
+
 
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
-    
-    logger.info(f"🚀 啟動 V7.2 硬體限流版 (Language: {lang})")
+    logger.info(f"🚀 啟動 V7.8 多階段懲罰版 (Language: {lang})")
 
     try:
         module_name = f"language.{lang}"
@@ -126,18 +131,29 @@ def main():
     tcp = RobustTCPClient(modbus_cfg['host'], modbus_cfg['port'], modbus_cfg['timeout'])
     mqtt_client = RobustMQTTClient(mqtt_cfg['broker'], mqtt_cfg['port'], mqtt_cfg['username'], mqtt_cfg['password'])
     protocol = AmpinvtProtocol(tcp, debug=debug_mode)
-    
     ha_mgr = HAManager(mqtt_client, mqtt_cfg, rmap)
     cmd_handler = CommandHandler(protocol, ha_mgr, rmap, timezone_offset=sys_cfg.get('timezone_offset', 8))
 
-    device_details = scan_device_details(protocol, modbus_cfg['unit_ids'], rmap)
+    # 1. 執行啟動掃描 (只收集成功的)
+    initial_online_ids = []
+    logger.info("🔍 執行啟動掃描...")
+    for uid in modbus_cfg['unit_ids']:
+        details = scan_single_device(protocol, uid, rmap)
+        if details:
+            device_details_cache[uid] = details
+            initial_online_ids.append(uid)
+            discovered_devices.add(uid)
 
-    logger.info(f"👻 設定 LWT: {ha_mgr.availability_topic}")
-    mqtt_client.set_lwt(ha_mgr.availability_topic, payload="offline", retain=True)
+    logger.info(f"👻 設定全域 LWT: {ha_mgr.global_avail_topic}")
+    mqtt_client.set_lwt(ha_mgr.global_avail_topic, payload="offline", retain=True)
 
     def on_mqtt_ready():
-        ha_mgr.send_discovery(modbus_cfg['unit_ids'], device_details)
-        mqtt_client.publish(ha_mgr.availability_topic, "online", retain=True)
+        if initial_online_ids:
+            ha_mgr.send_discovery(initial_online_ids, device_details_cache)
+            for uid in initial_online_ids:
+                ha_mgr.publish_connectivity_state(uid, True)
+        
+        mqtt_client.publish(ha_mgr.global_avail_topic, "online", retain=True)
         for t in ["switch", "button", "number", "select"]:
             mqtt_client.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
         logger.info("👂 MQTT 準備就緒")
@@ -147,7 +163,15 @@ def main():
 
     consecutive_errors = 0    
     MAX_ERRORS = 20
-    offline_devices = {} 
+    
+    current_ts = time.time()
+    offline_devices = {}
+    device_fail_counts = {}
+
+    for uid in modbus_cfg['unit_ids']:
+        device_fail_counts[uid] = 0
+        if uid not in discovered_devices:
+            offline_devices[uid] = current_ts # 將啟動失敗的先放入黑名單
 
     def process_commands():
         count = 0
@@ -155,10 +179,8 @@ def main():
             msg = mqtt_client.msg_queue.get()
             if isinstance(msg, dict): t, p = msg.get('topic'), msg.get('payload')
             else: t, p = getattr(msg, 'topic', None), getattr(msg, 'payload', None)
-            
             if not t or p is None: continue
             p_str = p.decode('utf-8').strip() if isinstance(p, bytes) else str(p).strip()
-
             logger.info(f"⚡ 插隊指令: {t} -> {p_str}")
             cmd_handler.process_message(t, p_str)
             count += 1
@@ -169,43 +191,89 @@ def main():
             any_success = False 
             current_time = time.time()
 
-            for uid in modbus_cfg['unit_ids']:
-                if process_commands() > 0: time.sleep(0.2)
+            process_commands()
 
+            for uid in modbus_cfg['unit_ids']:
+                
+                # 🟢 [邏輯] 檢查是否在黑名單中，並計算下次重試時間
                 if uid in offline_devices:
-                    if current_time < offline_devices[uid]: continue
-                    else: logger.info(f"🔄 重試設備 #{uid}")
+                    if current_time < offline_devices[uid]: continue 
+                    else: logger.info(f"🔄 嘗試聯繫設備 #{uid} ...")
+
+                if process_commands() > 0: time.sleep(0.2)
 
                 try:
                     raw_data = protocol.read_b1_data(uid)
                     if raw_data:
+                        # 🟢 [遲到註冊/初始化]
+                        if uid not in discovered_devices:
+                            logger.info(f"🎉 發現新上線設備 #{uid}！")
+                            b_type = raw_data[8]; b_count = raw_data[10]; hw_max = round(struct.unpack('>H', raw_data[24:26])[0] / 100.0, 1)
+                            if 1 <= b_count <= 16:
+                                details = {"count": b_count, "type": b_type, "hw_max": hw_max}
+                                device_details_cache[uid] = details
+                                ha_mgr.send_discovery([uid], device_details_cache)
+                                discovered_devices.add(uid)
+                                ha_mgr.publish_connectivity_state(uid, True)
+                            else: raise Exception("Invalid Data")
+
                         vals = protocol.decode(raw_data, rmap.B1_INFO)
                         bits = protocol.decode(raw_data, rmap.B3_STATUS_BITS, is_bits=True)
                         ha_mgr.publish_state(uid, vals, "state_b1")
                         ha_mgr.publish_state(uid, bits, "state_bits")
                         
+                        # 🟢 [邏輯] 成功連線，重置計數並發送 ON 狀態
+                        if device_fail_counts.get(uid, 0) > 0:
+                            logger.info(f"✅ 設備 #{uid} 連線恢復")
+                            device_fail_counts[uid] = 0
+                            ha_mgr.publish_device_availability(uid, "online")
+                            ha_mgr.publish_connectivity_state(uid, True)
+
                         if uid in offline_devices: del offline_devices[uid]
                         any_success = True
+                    else:
+                        raise Exception("Empty Data") 
                     time.sleep(app_config['polling']['delay_between_units'])
+
                 except Exception:
-                    logger.warning(f"⚠️ 設備 #{uid} 讀取失敗")
-                    offline_devices[uid] = current_time + 60
+                    # 🔴 [核心邏輯] 懲罰機制
+                    fail_count = device_fail_counts.get(uid, 0) + 1
+                    device_fail_counts[uid] = fail_count
+                    
+                    delay = INITIAL_DELAY
+                    
+                    # 1. 判斷是否達到長延遲懲罰 (例如 10 次失敗)
+                    if fail_count >= LONG_DELAY_THRESHOLD:
+                        if fail_count == LONG_DELAY_THRESHOLD:
+                             logger.error(f"❌ 設備 #{uid} 連續失敗達 {LONG_DELAY_THRESHOLD} 次！進入【懲罰性隔離】{LONG_DELAY} 秒。")
+                        delay = LONG_DELAY
+                    
+                    # 2. 判斷是否需要標記為 Unavailable (例如 20 次失敗)
+                    if fail_count == FAIL_THRESHOLD:
+                        logger.error(f"❌ 設備 #{uid} 連續失敗 {FAIL_THRESHOLD} 次，標記為【離線】")
+                        ha_mgr.publish_device_availability(uid, "offline")
+                        ha_mgr.publish_connectivity_state(uid, False)
+                    
+                    # 3. 實施懲罰 (加入黑名單)
+                    offline_devices[uid] = current_time + delay
             
+            # 系統級看門狗
             if any_success or len(offline_devices) < len(modbus_cfg['unit_ids']):
                 consecutive_errors = 0 
             else:
                 consecutive_errors += 1 
                 if consecutive_errors % 5 == 0:
-                    logger.warning(f"⚠️ 全部連線失敗 ({consecutive_errors}/{MAX_ERRORS})")
+                    logger.warning(f"⚠️ 所有設備皆無回應 ({consecutive_errors}/{MAX_ERRORS})")
 
             if consecutive_errors >= MAX_ERRORS:
-                logger.critical("❌ 系統嚴重故障，強制重啟")
-                mqtt_client.publish(ha_mgr.availability_topic, "offline", retain=True)
+                logger.critical("❌ 系統嚴重通訊故障，強制重啟")
+                mqtt_client.publish(ha_mgr.global_avail_topic, "offline", retain=True)
                 sys.exit(1)
 
         except Exception as e:
-            logger.error(f"主迴圈錯誤: {e}")
+            logger.error(f"主迴圈發生意外錯誤: {e}")
             consecutive_errors += 1
+            time.sleep(1)
             
         time.sleep(app_config['polling']['poll_interval'])
 
