@@ -1,7 +1,7 @@
 name: "MPPT Modbus MQTT Poller"
 version: "7.0.3"
 slug: "mppt_modbus_mqtt_poller"
-description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援ha Discovery與ha上設定參數,Advanced MPPT Monitor with Multi-language support and bi-directional control."
+description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援HA Discovery與HA上設定參數,Advanced MPPT Monitor with Multi-language support and bi-directional control."
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
 
 arch:
@@ -18,14 +18,18 @@ options:
   timezone_offset: 8
   reset_discovery_on_exit: false
   language: "tw"
-
+  # 🟢 [修改] 黑名單/故障懲罰設定
+  blacklist:
+    fail_threshold: 20      # 連續失敗幾次後，HA 狀態顯示為 'Unavailable'
+    isolation_time: 60      # 初始隔離時間 (秒, 輕微故障)
+    long_delay_threshold: 10 # 連續失敗幾次後，進入長延遲 (1小時)
+    long_delay: 3600        # 長延遲時間 (秒, 1小時)
   modbus:
     host: "192.168.106.12"
     port: 502
     unit_ids: "1"
     timeout: 3.0
     retry_delay: 2.0
-
   mqtt:
     broker: "core-mosquitto"
     port: 1883
@@ -34,7 +38,6 @@ options:
     discovery_prefix: "homeassistant"
     node_id: "wifi01"
     device_name: "ampinvt_mppt"
-
   polling:
     poll_interval: 3
     delay_between_units: 0.5
@@ -46,6 +49,13 @@ schema:
 
   language: list(tw|en)
 
+  # 🟢 [修改] 黑名單/故障懲罰設定
+  blacklist:
+    fail_threshold: int
+    isolation_time: int
+    long_delay_threshold: int
+    long_delay: int
+  
   modbus:
     host: str
     port: int
