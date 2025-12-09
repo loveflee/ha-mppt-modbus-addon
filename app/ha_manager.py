@@ -2,9 +2,6 @@ import json
 from core_mqtt import RobustMQTTClient
 
 class HAManager:
-    """
-    🏠 HA Manager V7.2 (Hardware Limit Support)
-    """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
         self.mqtt = mqtt
         self.rmap = rmap 
@@ -12,7 +9,8 @@ class HAManager:
         self.node_id = config.get('node_id', 'wifi01')
         self.dev_name = config['device_name']
         self.base_topic = f"{self.prefix}/sensor/{self.node_id}_mppt"
-        self.availability_topic = f"{self.prefix}/sensor/{self.node_id}_mppt/status"
+        
+        self.global_avail_topic = f"{self.prefix}/sensor/{self.node_id}_mppt/status"
         
         self.cmd_base = {
             "switch": f"{self.prefix}/switch",
@@ -22,20 +20,22 @@ class HAManager:
         }
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        print("📤 發送 HA Discovery (V7.2 硬體限流)...")
+        print("📤 發送 HA Discovery (V7.7)...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
             dev_info = self._get_dev_info(uid)
-            details = device_details.get(uid, {'count': 1, 'type': 0, 'hw_max': 60.0}) # 預設 60A
+            details = device_details.get(uid, {'count': 1, 'type': 0, 'hw_max': 60.0})
             
-            # Sensors
+            self.publish_device_availability(uid, "online")
+            
+            self._pub_connectivity(uid, entity_base, dev_info)
+            
             for item in self.rmap.B1_INFO:
                 if "ha" in item: self._pub(uid, entity_base, item, dev_info, "sensor", "state_b1")
             for key, item in self.rmap.B3_STATUS_BITS.items():
                 item['key'] = key 
                 self._pub(uid, entity_base, item, dev_info, "binary_sensor", "state_bits", is_bin=True)
 
-            # Controls
             if hasattr(self.rmap, 'CONTROL_SWITCHES'):
                 for key, item in self.rmap.CONTROL_SWITCHES.items():
                     item['key'] = key
@@ -56,18 +56,45 @@ class HAManager:
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT Controller #{uid}",
-            "model": "Ampinvt V7.2",
+            "model": "Ampinvt V7.7",
             "manufacturer": "ampinvt",
         }
 
-    def _add_availability(self, payload):
-        payload["availability_topic"] = self.availability_topic
+    def publish_connectivity_state(self, uid, is_connected: bool):
+        topic = f"{self.base_topic}_{uid}/connectivity_state"
+        payload = "ON" if is_connected else "OFF"
+        self.mqtt_client.publish(topic, payload, qos=1, retain=True)
+
+    def _pub_connectivity(self, uid, entity_base, dev_info):
+        topic = f"{self.prefix}/binary_sensor/{entity_base}/connectivity/config"
+        payload = {
+            "name": "連線狀態",
+            "unique_id": f"{entity_base}_connectivity",
+            "device": dev_info,
+            "state_topic": f"{self.base_topic}_{uid}/connectivity_state",
+            "device_class": "connectivity", 
+            "payload_on": "ON",
+            "payload_off": "OFF"
+        }
+        payload["availability_topic"] = self.global_avail_topic
+        self.mqtt_client.publish(topic, json.dumps(payload), qos=1, retain=True)
+
+    def publish_device_availability(self, uid, status):
+        topic = f"{self.base_topic}_{uid}/availability"
+        self.mqtt_client.publish(topic, status, qos=1, retain=True)
+
+    def _add_availability(self, payload, uid):
+        device_avail = f"{self.base_topic}_{uid}/availability"
+        payload["availability"] = [
+            {"topic": self.global_avail_topic},
+            {"topic": device_avail}
+        ]
         payload["payload_available"] = "online"
         payload["payload_not_available"] = "offline"
         return payload
 
     def _publish_config(self, topic, payload):
-        self.mqtt.publish(topic, json.dumps(self._add_availability(payload)), qos=1, retain=True)
+        self.mqtt_client.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def _pub(self, uid, entity_base, item, dev_info, domain, sub_topic, is_bin=False):
         key = item['key']
@@ -82,7 +109,7 @@ class HAManager:
         if item['ha'].get('icon'): payload["icon"] = item['ha']['icon']
         if item['ha'].get('device_class'): payload["device_class"] = item['ha']['device_class']
         if item['ha'].get('state_class'): payload["state_class"] = item['ha']['state_class']
-        self._publish_config(topic, payload)
+        self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_switch(self, uid, entity_base, item, dev_info):
         key = item['key']; topic = f"{self.prefix}/switch/{entity_base}/{key}/config"
@@ -95,7 +122,7 @@ class HAManager:
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_bits"
             payload["value_template"] = f"{{{{ value_json.{item['state_key']} }}}}"
         else: payload["optimistic"] = True
-        self._publish_config(topic, payload)
+        self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_button(self, uid, entity_base, item, dev_info):
         key = item['key']; topic = f"{self.prefix}/button/{entity_base}/{key}/config"
@@ -104,35 +131,18 @@ class HAManager:
             "command_topic": f"{self.cmd_base['button']}/{entity_base}/{key}/set",
             "payload_press": "PRESS", "icon": item.get('icon', "mdi:gesture-tap-button")
         }
-        self._publish_config(topic, payload)
+        self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_number(self, uid, entity_base, item, dev_info, details):
         key = item['key']; ha_conf = item['ha']
         topic = f"{self.prefix}/number/{entity_base}/{key}/config"
+        b_count = details.get('count', 1); b_type = details.get('type', 0); hw_max = details.get('hw_max', 60.0)
         
-        b_count = details.get('count', 1)
-        b_type = details.get('type', 0)
-        hw_max = details.get('hw_max', 60.0) # 🟢 取得硬體限流值
-        
-        # 預設範圍
         min_val = ha_conf.get('base_min', ha_conf.get('min', 0))
         max_val = ha_conf.get('base_max', ha_conf.get('max', 100))
-        
-        # 1. 鋰電專用範圍
-        if b_type == 3 and 'li_base_min' in ha_conf:
-            min_val = ha_conf['li_base_min']
-            max_val = ha_conf['li_base_max']
-            
-        # 2. 電壓倍率計算 (僅針對有 base_min 的電壓項目)
-        if 'base_min' in ha_conf:
-            min_val *= b_count
-            max_val *= b_count
-            
-        # 3. 🟢 [新增] 電流限流覆寫
-        # 如果是設定電流 (set_max_charge_curr)，將上限鎖死為硬體極限
-        if key == "set_max_charge_curr":
-            max_val = hw_max
-            # print(f"🔒 設備 {uid} 電流設定上限已鎖定為 {hw_max}A")
+        if b_type == 3 and 'li_base_min' in ha_conf: min_val = ha_conf['li_base_min']; max_val = ha_conf['li_base_max']
+        if 'base_min' in ha_conf: min_val *= b_count; max_val *= b_count
+        if key == "set_max_charge_curr": max_val = hw_max
             
         payload = {
             "name": item['name'], "unique_id": f"{entity_base}_{key}_num", "device": dev_info,
@@ -144,7 +154,7 @@ class HAManager:
         if ha_conf.get('link_b1'):
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_b1"
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
-        self._publish_config(topic, payload)
+        self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_select(self, uid, entity_base, item, dev_info):
         key = item['key']; ha_conf = item['ha']
@@ -157,16 +167,17 @@ class HAManager:
         if ha_conf.get('link_b1'):
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_b1"
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
-        self._publish_config(topic, payload)
+        self._publish_config(topic, self._add_availability(payload, uid))
 
     def publish_state(self, uid, data, sub_topic):
         topic = f"{self.base_topic}/{uid}/{sub_topic}"
-        self.mqtt.publish(topic, json.dumps(data), qos=0, retain=False)
+        self.mqtt_client.publish(topic, json.dumps(data), qos=0, retain=False)
     
     def clear_all_discovery(self, unit_ids: list):
         print("🧹 正在執行 HA 實體清除...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
+            self._clear(entity_base, "connectivity", "binary_sensor") 
             for item in self.rmap.B1_INFO:
                 if "ha" in item: self._clear(entity_base, item['key'], "sensor")
             for key in self.rmap.B3_STATUS_BITS.keys():
@@ -182,4 +193,4 @@ class HAManager:
 
     def _clear(self, entity_base, key, domain):
         topic = f"{self.prefix}/{domain}/{entity_base}/{key}/config"
-        self.mqtt.publish(topic, "", qos=1, retain=True)
+        self.mqtt_client.publish(topic, "", qos=1, retain=True)
