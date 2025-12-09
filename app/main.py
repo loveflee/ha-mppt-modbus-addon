@@ -6,9 +6,7 @@ import logging
 import importlib
 import os
 import struct
-from typing import Dict, Set
 
-# 確保路徑正確
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core_logging import setup_global_logging
@@ -23,8 +21,8 @@ mqtt_client = None
 ha_mgr = None
 app_config = None
 
-discovered_devices: Set[int] = set()       
-device_details_cache: Dict[int, Dict] = {} 
+discovered_devices = set()
+device_details_cache = {}
 
 def load_config():
     """載入設定，並處理黑名單預設值"""
@@ -34,7 +32,7 @@ def load_config():
         if 'system' not in config: config['system'] = {}
         if 'language' not in config['system']: config['system']['language'] = 'tw'
         
-        # 🟢 [優化] 處理黑名單設定，確保數值存在
+        # 🟢 處理黑名單設定
         if 'blacklist' not in config: config['blacklist'] = {}
         config['blacklist']['fail_threshold'] = config['blacklist'].get('fail_threshold', 20)
         config['blacklist']['isolation_time'] = config['blacklist'].get('isolation_time', 60)
@@ -75,7 +73,7 @@ def graceful_exit(signum, frame):
 
 def scan_single_device(protocol, uid, rmap):
     """啟動時，掃描單個設備以識別類型，只嘗試 3 次"""
-    MAX_RETRIES = 3 
+    MAX_RETRIES = 3
     for attempt in range(MAX_RETRIES):
         try:
             data = protocol.read_b1_data(uid)
@@ -102,17 +100,15 @@ def main():
     debug_mode = sys_cfg.get('debug', False)
     lang = sys_cfg.get('language', 'tw')
     
-    # 🟢 [新增] 取得黑名單參數
     BL_CFG = app_config['blacklist']
     FAIL_THRESHOLD = BL_CFG['fail_threshold']
     INITIAL_DELAY = BL_CFG['isolation_time']
     LONG_DELAY_THRESHOLD = BL_CFG['long_delay_threshold']
     LONG_DELAY = BL_CFG['long_delay']
 
-
     setup_global_logging(debug_mode)
     logger = logging.getLogger("Main")
-    logger.info(f"🚀 啟動 V7.8 多階段懲罰版 (Language: {lang})")
+    logger.info(f"🚀 啟動 V7.7 多階段懲罰版 (Language: {lang})")
 
     try:
         module_name = f"language.{lang}"
@@ -134,7 +130,6 @@ def main():
     ha_mgr = HAManager(mqtt_client, mqtt_cfg, rmap)
     cmd_handler = CommandHandler(protocol, ha_mgr, rmap, timezone_offset=sys_cfg.get('timezone_offset', 8))
 
-    # 1. 執行啟動掃描 (只收集成功的)
     initial_online_ids = []
     logger.info("🔍 執行啟動掃描...")
     for uid in modbus_cfg['unit_ids']:
@@ -171,7 +166,7 @@ def main():
     for uid in modbus_cfg['unit_ids']:
         device_fail_counts[uid] = 0
         if uid not in discovered_devices:
-            offline_devices[uid] = current_ts # 將啟動失敗的先放入黑名單
+            offline_devices[uid] = current_ts 
 
     def process_commands():
         count = 0
@@ -195,7 +190,6 @@ def main():
 
             for uid in modbus_cfg['unit_ids']:
                 
-                # 🟢 [邏輯] 檢查是否在黑名單中，並計算下次重試時間
                 if uid in offline_devices:
                     if current_time < offline_devices[uid]: continue 
                     else: logger.info(f"🔄 嘗試聯繫設備 #{uid} ...")
@@ -205,7 +199,6 @@ def main():
                 try:
                     raw_data = protocol.read_b1_data(uid)
                     if raw_data:
-                        # 🟢 [遲到註冊/初始化]
                         if uid not in discovered_devices:
                             logger.info(f"🎉 發現新上線設備 #{uid}！")
                             b_type = raw_data[8]; b_count = raw_data[10]; hw_max = round(struct.unpack('>H', raw_data[24:26])[0] / 100.0, 1)
@@ -222,7 +215,6 @@ def main():
                         ha_mgr.publish_state(uid, vals, "state_b1")
                         ha_mgr.publish_state(uid, bits, "state_bits")
                         
-                        # 🟢 [邏輯] 成功連線，重置計數並發送 ON 狀態
                         if device_fail_counts.get(uid, 0) > 0:
                             logger.info(f"✅ 設備 #{uid} 連線恢復")
                             device_fail_counts[uid] = 0
@@ -236,28 +228,23 @@ def main():
                     time.sleep(app_config['polling']['delay_between_units'])
 
                 except Exception:
-                    # 🔴 [核心邏輯] 懲罰機制
                     fail_count = device_fail_counts.get(uid, 0) + 1
                     device_fail_counts[uid] = fail_count
                     
                     delay = INITIAL_DELAY
                     
-                    # 1. 判斷是否達到長延遲懲罰 (例如 10 次失敗)
                     if fail_count >= LONG_DELAY_THRESHOLD:
                         if fail_count == LONG_DELAY_THRESHOLD:
                              logger.error(f"❌ 設備 #{uid} 連續失敗達 {LONG_DELAY_THRESHOLD} 次！進入【懲罰性隔離】{LONG_DELAY} 秒。")
                         delay = LONG_DELAY
                     
-                    # 2. 判斷是否需要標記為 Unavailable (例如 20 次失敗)
                     if fail_count == FAIL_THRESHOLD:
                         logger.error(f"❌ 設備 #{uid} 連續失敗 {FAIL_THRESHOLD} 次，標記為【離線】")
                         ha_mgr.publish_device_availability(uid, "offline")
                         ha_mgr.publish_connectivity_state(uid, False)
                     
-                    # 3. 實施懲罰 (加入黑名單)
                     offline_devices[uid] = current_time + delay
             
-            # 系統級看門狗
             if any_success or len(offline_devices) < len(modbus_cfg['unit_ids']):
                 consecutive_errors = 0 
             else:
