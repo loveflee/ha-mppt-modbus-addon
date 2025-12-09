@@ -40,30 +40,54 @@
 | **架構負擔** | **硬闖式通訊** (Brute-Force Comms) | `flush_buffer` 雖然有效，但本質上是通過 **額外的 CPU 週期** 來清除雜訊，彌補底層硬體的不足。 |
 
 ---
+# ⚙️ Ampinvt MPPT 監控系統設定指南 (V7.7)
 
+本文件詳細說明 `config.yaml` 檔案中所有可配置的選項。請根據您的 Home Assistant 環境和硬體設定進行修改。
 
-# 🛠️ 安裝與啟動指南 (Installation & Setup Guide)
+## 1. 系統設定 (system)
 
-本文件提供 Ampinvt MPPT 監控系統 V7.7 版本的啟動步驟。本系統建議在 Home Assistant OS 或 Proxmox (搭配 Docker) 環境下運行。
+| 選項 | 類型 | 預設值 | 參數作用與填寫說明 |
+| :--- | :--- | :--- | :--- |
+| `debug` | `bool` | `false` | 是否開啟偵錯模式。開啟後，日誌中會顯示詳細的 Modbus 原始數據 (Hex)，**僅建議除錯時開啟**。 |
+| `timezone_offset` | `int` | `8` | **時區補償**。設定您所在地區與 UTC+0 的時差 (單位：小時)。例如，台北/北京時間為 `8`。用於內建的時間同步功能。 |
+| `language` | `str` | `"tw"` | 介面語系選擇。目前支援 `"tw"` (繁體中文) 或 `"en"` (英文)。 |
 
-## 1. 環境準備 (Prerequisites)
+## 2. 故障懲罰機制 (blacklist) 🛡️
 
-* **EN**: **MQTT Broker**: Your Home Assistant must have Mosquitto Broker running.
-* **TW**: **MQTT Broker**: 您的 Home Assistant 必須安裝並運行 Mosquitto Broker (或任何 MQTT 服務)。
+**【極端韌性功能】** 用於處理單一設備的連續通訊失敗。當設備故障時，系統會將其短暫或長期隔離，以節省資源。
 
-* **EN**: **Modbus Gateway**: A stable Modbus-TCP gateway (e.g., USR-TCP232-410S) is required.
-* **TW**: **Modbus 網關**: 您需要一個穩定的 Modbus-TCP 網關 (例如 USR-TCP232-410S, USR-WIFI232-G2 等)。
+| 選項 | 類型 | 預設值 | 參數作用與填寫說明 |
+| :--- | :--- | :--- | :--- |
+| `fail_threshold` | `int` | `20` | **HA 離線門檻**。單一設備連續失敗達到此次數後，HA 上的實體將被標記為 `Unavailable` (變灰)。 |
+| `isolation_time` | `int` | `60` | **初始隔離時間** (秒)。當設備連線失敗時，第一次隔離的時間長度。**建議設為 60 秒**。 |
+| `long_delay_threshold` | `int` | `10` | **長延遲門檻**。單一設備連續失敗次數超過此門檻後，系統將進入「長期隔離」。 |
+| `long_delay` | `int` | `3600` | **嚴重懲罰時間** (秒)。當失敗達到 `long_delay_threshold` 後，每次重試的間隔時間。**預設 3600 秒即 1 小時 (避免資源浪費)**。 |
 
-* **EN**: **Docker Environment**: The host machine must have Docker or Docker Compose installed.
-* **TW**: **Docker 環境**: 主機需安裝 Docker 或 Docker Compose。
+## 3. Modbus 通訊設定 (modbus)
 
----
+| 選項 | 類型 | 預設值 | 參數作用與填寫說明 |
+| :--- | :--- | :--- | :--- |
+| `host` | `str` | `"192.168.106.12"` | **必填**：您的 Modbus-TCP 網關的 IP 位址。 |
+| `port` | `int` | `502` | Modbus-TCP 服務的端口號。除非您的網關有特殊設定，否則通常為 `502`。 |
+| `unit_ids` | `str` | `"1"` | **必填**：要監控的 MPPT 設備 ID (Slave ID)。多個設備請用逗號分隔，例如 `"1, 2, 3, 4"`。 |
+| `timeout` | `float` | `3.0` | **Modbus 超時時間** (秒)。程式等待設備回應的最長時間。**建議 3.0 秒或更低**。 |
 
-## 2. 檔案配置 (File Configuration)
+## 4. MQTT Broker 設定 (mqtt)
 
-請在專案根目錄下創建或修改以下三個關鍵文件：
+| 選項 | 類型 | 預設值 | 參數作用與填寫說明 |
+| :--- | :--- | :--- | :--- |
+| `broker` | `str` | `"core-mosquitto"` | MQTT Broker 的服務 IP 或名稱。若與 HA 運行在同一主機，可使用預設值。 |
+| `port` | `int` | `1883` | MQTT 端口號 (非 SSL)。 |
+| `username` | `str` | `"mqtt_user"` | MQTT 登入帳號。 |
+| `password` | `str` | `"mqtt_password"` | MQTT 登入密碼。 |
+| `discovery_prefix` | `str` | `"homeassistant"` | HA MQTT Discovery 的預設前綴。 |
+| `node_id` | `str` | `"wifi01"` | 識別此 Add-on 實例的 Node ID。影響實體的唯一 ID。 |
+| `device_name` | `str` | `"ampinvt_mppt"` | HA 中顯示的設備名稱。 |
+| `reset_discovery_on_exit` | `bool` | `false` | 程式結束時是否清除 HA 上的所有實體註冊 (**生產環境請保持 `false`**)。 |
 
-### A. `requirements.txt` (相依性 / Dependencies)
+## 5. 輪詢間隔設定 (polling)
 
-* **EN**: Ensure Flask is added for future Web UI expansion.
-* **TW**: 請確保 Flask 已經被加入，以便未來擴充 Web 介面。
+| 選項 | 類型 | 預設值 | 參數作用與填寫說明 |
+| :--- | :--- | :--- | :--- |
+| `poll_interval` | `int` | `3` | **主循環間隔** (秒)。程式在讀完所有設備後，休息的時間。此值越低，數據更新越快。 |
+| `delay_between_units` | `float` | `0.5` | **設備間延遲** (秒)。讀取完一台設備後，等待多長時間再讀下一台 (避免總線衝突)。 |
