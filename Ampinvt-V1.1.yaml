@@ -1,0 +1,591 @@
+# ==========================================================
+# Ampinvt MPPT V1.1
+# 適用於: B1 (93 Bytes 讀取) / D0 (寫入)
+# ==========================================================
+device_info:
+  manufacturer: "Ampinvt Solar MPPT "
+  model: "Ampinvt MPPT"
+# ==========================================================
+# 1. 傳感器 (Sensors) - 對應 B1 指令回傳的數據
+# 結構: List (陣列)
+# ==========================================================
+sensors:
+  - key: "run_status"
+    name: "運行狀態碼"
+    offset: 3
+    length: 1
+    scale: 1.0
+    bits:
+      - bit: 0
+        name: "運作狀態"
+        map:
+          0: "正常"
+          1: "異常(電池自動識別錯誤)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 1
+        name: "電池狀態"
+        map:
+          0: "正常"
+          1: "異常"
+        ha:
+          type: "sensor"
+          device_class: "power"
+      - bit: 2
+        name: "風扇狀態"
+        map:
+          0: "正常"
+          1: "異常"
+        ha:
+          type: "sensor"
+          device_class: "running"
+      - bit: 3
+        name: "溫度狀態"
+        map:
+          0: "正常"
+          1: "異常"
+        ha:
+          type: "sensor"
+          device_class: "running"
+      - bit: 4
+        name: "直流輸出"
+        map:
+          0: "正常"
+          1: "異常"
+        ha:
+          type: "sensor"
+          device_class: "problem"
+      - bit: 5
+        name: "內部溫度1"
+        # 自定義文字映射 (Sensor)
+        # 如果您想要顯示文字而不是開關，就不要寫 type: binary_sensor
+        map:
+          0: "正常"
+          1: "異常(過壓)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 6
+        name: "內部溫度2"
+        # 自定義文字映射 (Sensor)
+        # 如果您想要顯示文字而不是開關，就不要寫 type: binary_sensor
+        map:
+          0: "正常"
+          1: "異常(過壓)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 7
+        name: "外部溫度"
+        # 自定義文字映射 (Sensor)
+        # 如果您想要顯示文字而不是開關，就不要寫 type: binary_sensor
+        map:
+          0: "正常"
+          1: "異常(過壓)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+
+  - key: "charge_status"
+    name: "充電狀態碼"
+    offset: 4
+    length: 1
+    scale: 1.0
+    bits:
+      - bit: 0
+        name: "充電狀態"
+        map:
+          0: "停充"
+          1: "充電"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 1
+        name: "均充"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 2
+        name: "mppt"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 3
+        name: "浮充"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 4
+        name: "充電限流"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 5
+        name: "充電降額"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 6
+        name: "遠端控制禁充"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+      - bit: 7
+        name: "pv過壓"
+        map:
+          0: "停止"
+          1: "啟用"
+        ha:
+          type: "sensor"
+          icon: "mdi:battery-charging"
+
+  - key: "control_status"
+    name: "控制狀態"
+    offset: 5
+    length: 1
+    scale: 1.0
+    # 這裡不寫 ha，因為它只是一個容器，真正的實體在 bits 裡
+    bits:
+      - bit: 0
+        name: "充電輸出relay"
+        map:
+          0: "關閉"
+          1: "開啟"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 1
+        name: "負載輸出"
+        map:
+          0: "關閉"
+          1: "開啟"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 2
+        name: "風扇開啟"
+        map:
+          0: "關閉"
+          1: "開啟"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+      - bit: 4
+        name: "過充保護"
+        map:
+          0: "正常"
+          1: "異常(過充保護啟用)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+        # 0=正常, 1=保護 -> 使用 binary_sensor problem
+#        ha:
+#          type: "binary_sensor"
+#          device_class: "problem"
+
+      - bit: 5
+        name: "過壓保護"
+        # 自定義文字映射 (Sensor)
+        # 如果您想要顯示文字而不是開關，就不要寫 type: binary_sensor
+        map:
+          0: "正常"
+          1: "異常(過壓保護啟用)"
+        ha:
+          type: "sensor"
+          icon: "mdi:alert-circle"
+# --------------offset:5
+
+  - key: "battery_type"
+    name: "電池類型"
+    offset: 8
+    length: 1
+    scale: 1.0
+    map:
+      0: "0 鉛酸(免維護)"
+      1: "1 鉛酸(膠體)"
+      2: "2 鉛酸(液體)"
+      3: "3 鋰電池"
+    ha:
+      type: "sensor"
+      icon: "mdi:car-battery"
+
+  - key: "recognition_mode"
+    name: "識別方式"
+    offset: 9
+    length: 1
+    scale: 1.0
+    map:
+      0: "自動識別"
+      1: "手動12V"
+      2: "手動24V"
+      3: "手動36V"
+      4: "手動48V"
+      5: "手動60V"
+      6: "手動72V"
+      7: "手動84V"
+      8: "手動96V"
+    ha:
+      type: "sensor"
+      icon: "mdi:eye-refresh"
+
+  - key: "battery_count"
+    name: "電池串數"
+    offset: 10
+    length: 1
+    scale: 1.0
+    unit: "串"
+    ha:
+      type: "sensor"
+      icon: "mdi:battery-plus"
+
+  - key: "load_control_mode"
+    name: "負載模式"
+    offset: 11
+    length: 1
+    scale: 1.0
+    map:
+      0: "關閉"
+      1: "自動(光控+時控)"
+      2: "時間控制"
+      3: "光控模式"
+      4: "遠程控制"
+    ha:
+      type: "sensor"
+      icon: "mdi:cog-transfer"
+
+  # --- PV (太陽能板) 數據 ---
+  - key: "pv_voltage"
+    name: "PV 輸入電壓"
+    offset: 30
+    length: 2
+    scale: 10.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+      state_class: "measurement"
+
+  # --- 電池實時數據 ---
+  - key: "battery_voltage"
+    name: "電池實時電壓"
+    offset: 32
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+      state_class: "measurement"
+
+  - key: "charge_current"
+    name: "總充電電流"
+    offset: 34
+    length: 2
+    scale: 100.0
+    unit: "A"
+    ha:
+      type: "sensor"
+      device_class: "current"
+      state_class: "measurement"
+
+  # --- 溫度監控 ---
+  - key: "internal_temp"
+    name: "設備內部溫度"
+    offset: 36
+    length: 2
+    scale: 10.0
+    unit: "°C"
+    signed: true
+    ha:
+      type: "sensor"
+      device_class: "temperature"
+      state_class: "measurement"
+
+  - key: "battery_temp"
+    name: "電池外部溫度"
+    offset: 40
+    length: 2
+    scale: 100.0
+    unit: "°C"
+    signed: true
+    ha:
+      type: "sensor"
+      device_class: "temperature"
+      state_class: "measurement"
+
+  # --- 統計數據 ---
+  - key: "today_yield_wh"
+    name: "今日發電量"
+    offset: 44
+    length: 4
+    scale: 1.0
+    unit: "Wh"
+    ha:
+      type: "sensor"
+      device_class: "energy"
+      state_class: "total_increasing"
+
+  - key: "total_yield_wh"
+    name: "累計總發電量"
+    offset: 48
+    length: 4
+    scale: 1.0
+    unit: "Wh"
+    ha:
+      type: "sensor"
+      device_class: "energy"
+      state_class: "total_increasing"
+
+  # --- 系統參數回讀 (用於驗證寫入結果) ---
+  - key: "rated_voltage"
+    name: "系統額定電壓"
+    offset: 16
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "equalize_voltage"
+    name: "均充電壓(當前)"
+    offset: 18
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "float_voltage"
+    name: "浮充電壓(當前)"
+    offset: 20
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "discharge_limit"
+    name: "放電下限(當前)"
+    offset: 22
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "discharge_recover"
+    name: "過放回復"
+    offset: 54
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "over_voltage_protection"
+    name: "過壓保護"
+    offset: 56
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "over_voltage_recovery"
+    name: "過壓恢復"
+    offset: 58
+    length: 2
+    scale: 100.0
+    unit: "V"
+    ha:
+      type: "sensor"
+      device_class: "voltage"
+
+  - key: "max_charge_current"
+    name: "最大電流設定(當前)"
+    offset: 26
+    length: 2
+    scale: 100.0
+    unit: "A"
+    ha:
+      type: "sensor"
+      device_class: "current"
+
+  - key: "run_charge_current_limit"
+    name: "運行限流(當前)"
+    offset: 28
+    length: 2
+    scale: 100.0
+    unit: "A"
+    ha:
+      type: "sensor"
+      device_class: "current"
+
+
+# ==========================================================
+# 2. 設定參數 (Settings) - 對應 D0 寫入指令
+# 結構: Map (Key為16進位指令碼)
+# ==========================================================
+settings:
+  # --- 基礎設定 ---
+  "0x09":
+    key: "set_battery_type"
+    name: "設定-電池類型"
+    data_len: 1
+    scale: 1.0
+    link_b1: "battery_type"
+    ha:
+      type: "select"
+      options: ["鉛酸(免維護)", "鉛酸(膠體)", "鉛酸(液體)", "鋰電池"]
+      icon: "mdi:car-battery"
+
+  "0x0A":
+    key: "set_battery_count"
+    name: "設定-電池串數"
+    data_len: 1
+    scale: 1.0
+    link_b1: "battery_count"
+    ha:
+      type: "number"
+      min: 1
+      max: 16
+      step: 1
+      mode: "box"
+      icon: "mdi:battery-plus"
+
+  "0x0B":
+    key: "set_recognition_mode"
+    name: "設定-識別方式"
+    data_len: 1
+    scale: 1.0
+    link_b1: "recognition_mode"
+    ha:
+      type: "select"
+      options: ["自動識別", "手動12V",  "手動24V", "手動36V",  "手動48V",  "手動60V",  "手動72V",  "手動84V",  "手動96V"]
+      icon: "mdi:eye-settings"
+
+  "0x0C":
+    key: "set_load_mode"
+    name: "設定-負載模式"
+    data_len: 1
+    scale: 1.0
+    link_b1: "load_control_mode"
+    ha:
+      type: "select"
+      options: ["關閉", "自動(光控+時控)", "時間控制", "光控模式", "遠程控制"]
+      icon: "mdi:cog-transfer"
+
+  # --- 電壓參數設定 ---
+  "0x21":
+    key: "set_equalize_voltage"
+    name: "設定-均充電壓"
+    unit: "V"
+    data_len: 2
+    scale: 100.0
+    link_b1: "equalize_voltage"
+    ha:
+      type: "number"
+      base_min: 9.0
+      base_max: 17.0
+      li_base_min: 10.0
+      li_base_max: 14.6
+      step: 0.1
+      mode: "box"
+
+  "0x22":
+    key: "set_float_voltage"
+    name: "設定-浮充電壓"
+    unit: "V"
+    data_len: 2
+    scale: 100.0
+    link_b1: "float_voltage"
+    ha:
+      type: "number"
+      base_min: 9.0
+      base_max: 17.0
+      li_base_min: 10.0
+      li_base_max: 14.6
+      step: 0.1
+      mode: "box"
+
+  "0x23":
+    key: "set_discharge_limit"
+    name: "設定-放電下限"
+    unit: "V"
+    data_len: 2
+    scale: 100.0
+    link_b1: "discharge_limit"
+    ha:
+      type: "number"
+      base_min: 9.0
+      base_max: 17.0
+      step: 0.1
+      mode: "box"
+
+  "0x26":
+    key: "set_discharge_recover"
+    name: "設定-過放恢復"
+    unit: "V"
+    data_len: 2
+    scale: 100.0
+    link_b1: "discharge_recover"
+    ha:
+      type: "number"
+      base_min: 9.0
+      base_max: 17.0
+      step: 0.1
+      mode: "box"
+
+  "0x27":
+    key: "set_over_prot_vol"
+    name: "設定-過壓保護"
+    unit: "V"
+    data_len: 2
+    scale: 100.0
+    link_b1: "over_voltage_protection"
+    ha:
+      type: "number"
+      base_min: 12.0
+      base_max: 17.0
+      step: 0.1
+      mode: "box"
+
+  # --- 電流參數設定 ---
+  "0x25":
+    key: "set_max_charge_curr"
+    name: "設定-充電限流"
+    unit: "A"
+    data_len: 2
+    scale: 100.0
+    link_b1: "max_charge_current"
+    ha:
+      type: "number"
+      min: 0.0
+      max: 60.0
+      step: 1.0
+      mode: "slider"
