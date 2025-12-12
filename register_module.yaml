@@ -1,0 +1,414 @@
+# ==========================================================
+# Ampinvt MPPT V12 (Template Optimized)
+# ==========================================================
+device_info:
+  manufacturer: "Ampinvt"
+  model: "Solar MPPT Controller"
+
+# 🟢 [V11] 讀取指令策略
+read_commands:
+  - id: "cmd_read_all"
+    fc: 0xB1
+    response_len: 93
+    custom_payload: [0x01, 0x00, 0x00, 0x00, 0x00]
+
+# 🟢 [V12] 定義庫 (Templates)
+definitions:
+  # 1. 預設值
+  defaults:
+    length: 1
+    scale: 1.0
+    unit: ""
+
+  # 2. 數值映射表
+  value_maps:
+    map_ok_err:
+      0: "正常"
+      1: "異常"
+    map_on_off:
+      0: "關閉"
+      1: "開啟"
+    map_stop_enable:
+      0: "停止"
+      1: "啟用"
+    map_charge_status:
+      0: "停充"
+      1: "充電"
+
+  # 3. HA 外觀模板
+  ha_profiles:
+    # --- 數值類 ---
+    pf_voltage_10:  {type: "sensor", device_class: "voltage", state_class: "measurement", unit_of_meas: "V", scale: 10.0}
+    pf_voltage_100: {type: "sensor", device_class: "voltage", state_class: "measurement", unit_of_meas: "V", scale: 100.0}
+    pf_current:     {type: "sensor", device_class: "current", state_class: "measurement", unit_of_meas: "A", scale: 100.0}
+    pf_temp:        {type: "sensor", device_class: "temperature", state_class: "measurement", unit_of_meas: "°C", signed: true}
+    pf_energy:      {type: "sensor", device_class: "energy", state_class: "total_increasing", unit_of_meas: "Wh"}
+    
+    # --- 狀態類 ---
+    pf_alert:       {type: "binary_sensor", device_class: "problem"} # 異常=紅
+    pf_running:     {type: "binary_sensor", device_class: "running"} # 運行=綠
+    pf_switch:      {type: "binary_sensor", device_class: "power"}   # 開關=通電
+    pf_charging:    {type: "sensor", icon: "mdi:battery-charging"}
+
+    # --- 設定類 ---
+    pf_set_vol:     {type: "number", mode: "box", min: 9.0, max: 17.0, step: 0.1, unit_of_meas: "V"}
+    pf_set_curr:    {type: "number", mode: "slider", min: 0.0, max: 60.0, step: 1.0, unit_of_meas: "A"}
+
+# ==========================================================
+# 1. 傳感器 (Sensors)
+# ==========================================================
+sensors:
+  # --- Status Bits ---
+  - key: "run_status"
+    name: "運行狀態碼"
+    command_id: "cmd_read_all"
+    offset: 3
+    bits:
+      - bit: 0
+        name: "運作狀態"
+        # 這裡有特殊文字，所以 map 局部覆蓋，但樣式用模板
+        map: {0: "正常", 1: "異常(電池識別錯誤)"}
+        ha_profile: "pf_alert"
+      - bit: 1
+        name: "電池狀態"
+        map_profile: "map_ok_err"
+        ha_profile: "pf_switch"
+      - bit: 2
+        name: "風扇狀態"
+        map_profile: "map_ok_err"
+        ha_profile: "pf_running"
+      - bit: 3
+        name: "溫度狀態"
+        map_profile: "map_ok_err"
+        ha_profile: "pf_running"
+      - bit: 4
+        name: "直流輸出"
+        map_profile: "map_ok_err"
+        ha_profile: "pf_alert"
+      - bit: 5
+        name: "內部溫度1"
+        map: {0: "正常", 1: "異常(過壓)"}
+        ha: {type: "sensor", icon: "mdi:alert-circle"} # 這裡維持您原本要顯示文字的需求
+      - bit: 6
+        name: "內部溫度2"
+        map: {0: "正常", 1: "異常(過壓)"}
+        ha: {type: "sensor", icon: "mdi:alert-circle"}
+      - bit: 7
+        name: "外部溫度"
+        map: {0: "正常", 1: "異常(過壓)"}
+        ha: {type: "sensor", icon: "mdi:alert-circle"}
+
+  - key: "charge_status"
+    name: "充電狀態碼"
+    command_id: "cmd_read_all"
+    offset: 4
+    bits:
+      - bit: 0
+        name: "充電狀態"
+        map_profile: "map_charge_status"
+        ha_profile: "pf_charging"
+      - bit: 1
+        name: "均充"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 2
+        name: "mppt"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 3
+        name: "浮充"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 4
+        name: "充電限流"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 5
+        name: "充電降額"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 6
+        name: "遠端控制禁充"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+      - bit: 7
+        name: "pv過壓"
+        map_profile: "map_stop_enable"
+        ha_profile: "pf_charging"
+
+  - key: "control_status"
+    name: "控制狀態"
+    command_id: "cmd_read_all"
+    offset: 5
+    bits:
+      - bit: 0
+        name: "充電輸出Relay"
+        map_profile: "map_on_off"
+        ha_profile: "pf_alert"
+      - bit: 1
+        name: "負載輸出"
+        map_profile: "map_on_off"
+        ha_profile: "pf_alert"
+      - bit: 2
+        name: "風扇開啟"
+        map_profile: "map_on_off"
+        ha_profile: "pf_alert"
+      - bit: 4
+        name: "過充保護"
+        map: {0: "正常", 1: "異常(過充保護啟用)"}
+        ha_profile: "pf_alert"
+      - bit: 5
+        name: "過壓保護"
+        map: {0: "正常", 1: "異常(過壓保護啟用)"}
+        ha: {type: "sensor", icon: "mdi:alert-circle"}
+
+  # --- 數值感測器 (大量使用模板) ---
+  - key: "pv_voltage"
+    name: "PV 輸入電壓"
+    command_id: "cmd_read_all"
+    offset: 30
+    length: 2
+    ha_profile: "pf_voltage_10" # Scale 10
+
+  - key: "battery_voltage"
+    name: "電池實時電壓"
+    command_id: "cmd_read_all"
+    offset: 32
+    length: 2
+    ha_profile: "pf_voltage_100" # Scale 100
+
+  - key: "charge_current"
+    name: "總充電電流"
+    command_id: "cmd_read_all"
+    offset: 34
+    length: 2
+    ha_profile: "pf_current"
+
+  - key: "internal_temp"
+    name: "設備內部溫度"
+    command_id: "cmd_read_all"
+    offset: 36
+    length: 2
+    scale: 100.0  # 依照您舊版設定
+    ha_profile: "pf_temp"
+
+  - key: "battery_temp"
+    name: "電池外部溫度"
+    command_id: "cmd_read_all"
+    offset: 40
+    length: 2
+    scale: 10.0   # 依照您舊版設定
+    ha_profile: "pf_temp"
+
+  - key: "today_yield_wh"
+    name: "今日發電量"
+    command_id: "cmd_read_all"
+    offset: 44
+    length: 4
+    ha_profile: "pf_energy"
+
+  - key: "total_yield_wh"
+    name: "累計總發電量"
+    command_id: "cmd_read_all"
+    offset: 48
+    length: 4
+    ha_profile: "pf_energy"
+
+  # --- 參數回讀 ---
+  - key: "rated_voltage"
+    name: "系統額定電壓"
+    command_id: "cmd_read_all"
+    offset: 16
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "equalize_voltage"
+    name: "均充電壓(當前)"
+    command_id: "cmd_read_all"
+    offset: 18
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "float_voltage"
+    name: "浮充電壓(當前)"
+    command_id: "cmd_read_all"
+    offset: 20
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "discharge_limit"
+    name: "放電下限(當前)"
+    command_id: "cmd_read_all"
+    offset: 22
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "discharge_recover"
+    name: "過放回復"
+    command_id: "cmd_read_all"
+    offset: 54
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "over_voltage_protection"
+    name: "過壓保護"
+    command_id: "cmd_read_all"
+    offset: 56
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "over_voltage_recovery"
+    name: "過壓恢復"
+    command_id: "cmd_read_all"
+    offset: 58
+    length: 2
+    ha_profile: "pf_voltage_100"
+
+  - key: "max_charge_current"
+    name: "最大電流設定(當前)"
+    command_id: "cmd_read_all"
+    offset: 26
+    length: 2
+    ha_profile: "pf_current"
+
+  - key: "run_charge_current_limit"
+    name: "運行限流(當前)"
+    command_id: "cmd_read_all"
+    offset: 28
+    length: 2
+    ha_profile: "pf_current"
+    
+  - key: "battery_type"
+    name: "電池類型"
+    command_id: "cmd_read_all"
+    offset: 8
+    map: {0: "0 鉛酸(免維護)", 1: "1 鉛酸(膠體)", 2: "2 鉛酸(液體)", 3: "3 鋰電池"}
+    ha: {type: "sensor", icon: "mdi:car-battery"}
+
+  - key: "recognition_mode"
+    name: "識別方式"
+    command_id: "cmd_read_all"
+    offset: 9
+    map: {0: "自動識別", 1: "手動12V", 2: "手動24V", 3: "手動36V", 4: "手動48V", 5: "手動60V", 6: "手動72V", 7: "手動84V", 8: "手動96V"}
+    ha: {type: "sensor", icon: "mdi:eye-refresh"}
+    
+  - key: "battery_count"
+    name: "電池串數"
+    command_id: "cmd_read_all"
+    offset: 10
+    unit: "串"
+    ha: {type: "sensor", icon: "mdi:battery-plus"}
+
+  - key: "load_control_mode"
+    name: "負載模式"
+    command_id: "cmd_read_all"
+    offset: 11
+    map: {0: "關閉", 1: "自動", 2: "時間", 3: "光控", 4: "遠程"}
+    ha: {type: "sensor", icon: "mdi:cog-transfer"}
+
+
+# ==========================================================
+# 2. 設定參數 (Settings)
+# ==========================================================
+settings:
+  "0x09":
+    key: "set_battery_type"
+    name: "設定-電池類型"
+    write_fc: 0xD0
+    data_len: 1
+    link_sensor: "battery_type" # 🟢 改名: link_sensor
+    ha:
+      type: "select"
+      options: ["鉛酸(免維護)", "鉛酸(膠體)", "鉛酸(液體)", "鋰電池"]
+      icon: "mdi:car-battery"
+
+  "0x0A":
+    key: "set_battery_count"
+    name: "設定-電池串數"
+    write_fc: 0xD0
+    data_len: 1
+    link_sensor: "battery_count"
+    ha:
+      type: "number"
+      min: 1
+      max: 16
+      mode: "box"
+      icon: "mdi:battery-plus"
+
+  "0x0B":
+    key: "set_recognition_mode"
+    name: "設定-識別方式"
+    write_fc: 0xD0
+    data_len: 1
+    link_sensor: "recognition_mode"
+    ha:
+      type: "select"
+      options: ["自動識別", "手動12V", "手動24V", "手動36V", "手動48V", "手動60V", "手動72V", "手動84V", "手動96V"]
+      icon: "mdi:eye-settings"
+
+  "0x0C":
+    key: "set_load_mode"
+    name: "設定-負載模式"
+    write_fc: 0xD0
+    data_len: 1
+    link_sensor: "load_control_mode"
+    ha:
+      type: "select"
+      options: ["關閉", "自動(光控+時控)", "時間控制", "光控模式", "遠程控制"]
+      icon: "mdi:cog-transfer"
+
+  # --- 電壓參數 (使用模板) ---
+  "0x21":
+    key: "set_equalize_voltage"
+    name: "設定-均充電壓"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "equalize_voltage"
+    ha_profile: "pf_set_vol"
+
+  "0x22":
+    key: "set_float_voltage"
+    name: "設定-浮充電壓"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "float_voltage"
+    ha_profile: "pf_set_vol"
+
+  "0x23":
+    key: "set_discharge_limit"
+    name: "設定-放電下限"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "discharge_limit"
+    ha_profile: "pf_set_vol"
+
+  "0x26":
+    key: "set_discharge_recover"
+    name: "設定-過放恢復"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "discharge_recover"
+    ha_profile: "pf_set_vol"
+
+  "0x27":
+    key: "set_over_prot_vol"
+    name: "設定-過壓保護"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "over_voltage_protection"
+    ha_profile: "pf_set_vol" # 覆蓋模板: base_min 可在此處覆寫，如果不寫就用模板的 9.0
+
+  # --- 電流參數 ---
+  "0x25":
+    key: "set_max_charge_curr"
+    name: "設定-充電限流"
+    write_fc: 0xD0
+    data_len: 2
+    scale: 100.0
+    link_sensor: "max_charge_current"
+    ha_profile: "pf_set_curr"
