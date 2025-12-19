@@ -1,15 +1,17 @@
+# ha_manager.py
 import json
 from core_mqtt import RobustMQTTClient
-import logging # 確保 logging 引入
+import logging
 
-logger = logging.getLogger("HA_MGR") # 確保 Logger 設置正確
+logger = logging.getLogger("HA_MGR")
 
 class HAManager:
     """
     🏠 HA Manager V7.7 (Device Availability & Hardware Limit)
+    🔥 修改：加入 object_id 參數，解決實體 ID 命名重複問題
     """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
-        self.mqtt = mqtt # 🟢 正確名稱是 self.mqtt
+        self.mqtt = mqtt
         self.rmap = rmap 
         self.prefix = config['discovery_prefix']
         self.node_id = config.get('node_id', 'wifi01')
@@ -26,7 +28,7 @@ class HAManager:
         }
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        print("📤 發送 HA Discovery (V7.7)...")
+        print("📤 發送 HA Discovery (V7.7 + Object_ID)...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
             dev_info = self._get_dev_info(uid)
@@ -69,14 +71,15 @@ class HAManager:
     def publish_connectivity_state(self, uid, is_connected: bool):
         topic = f"{self.base_topic}_{uid}/connectivity_state"
         payload = "ON" if is_connected else "OFF"
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, payload, qos=1, retain=True)
 
     def _pub_connectivity(self, uid, entity_base, dev_info):
         topic = f"{self.prefix}/binary_sensor/{entity_base}/connectivity/config"
+        unique_id = f"{entity_base}_connectivity"
         payload = {
             "name": "連線狀態",
-            "unique_id": f"{entity_base}_connectivity",
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 強制指定 object_id
             "device": dev_info,
             "state_topic": f"{self.base_topic}_{uid}/connectivity_state",
             "device_class": "connectivity", 
@@ -84,12 +87,10 @@ class HAManager:
             "payload_off": "OFF"
         }
         payload["availability_topic"] = self.global_avail_topic
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def publish_device_availability(self, uid, status):
         topic = f"{self.base_topic}_{uid}/availability"
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, status, qos=1, retain=True)
 
     def _add_availability(self, payload, uid):
@@ -103,7 +104,6 @@ class HAManager:
         return payload
 
     def _publish_config(self, topic, payload):
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def _pub(self, uid, entity_base, item, dev_info, domain, sub_topic, is_bin=False):
@@ -111,7 +111,10 @@ class HAManager:
         unique_id = f"{entity_base}_{key}" + ("_bs" if is_bin else "")
         topic = f"{self.prefix}/{domain}/{entity_base}/{key}/config"
         payload = {
-            "name": item['name'], "unique_id": unique_id, "device": dev_info,
+            "name": item['name'], # 顯示中文名稱
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 強制使用英文 ID 生成 entity_id
+            "device": dev_info,
             "state_topic": f"{self.base_topic}/{uid}/{sub_topic}",
             "value_template": f"{{{{ value_json.{key} }}}}",
         }
@@ -123,8 +126,12 @@ class HAManager:
 
     def _pub_switch(self, uid, entity_base, item, dev_info):
         key = item['key']; topic = f"{self.prefix}/switch/{entity_base}/{key}/config"
+        unique_id = f"{entity_base}_{key}_sw"
         payload = {
-            "name": item['name'], "unique_id": f"{entity_base}_{key}_sw", "device": dev_info,
+            "name": item['name'], 
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 Object ID
+            "device": dev_info,
             "command_topic": f"{self.cmd_base['switch']}/{entity_base}/{key}/set",
             "icon": item.get('icon', "mdi:toggle-switch")
         }
@@ -136,8 +143,12 @@ class HAManager:
 
     def _pub_button(self, uid, entity_base, item, dev_info):
         key = item['key']; topic = f"{self.prefix}/button/{entity_base}/{key}/config"
+        unique_id = f"{entity_base}_{key}_btn"
         payload = {
-            "name": item['name'], "unique_id": f"{entity_base}_{key}_btn", "device": dev_info,
+            "name": item['name'], 
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 Object ID
+            "device": dev_info,
             "command_topic": f"{self.cmd_base['button']}/{entity_base}/{key}/set",
             "payload_press": "PRESS", "icon": item.get('icon', "mdi:gesture-tap-button")
         }
@@ -154,8 +165,12 @@ class HAManager:
         if 'base_min' in ha_conf: min_val *= b_count; max_val *= b_count
         if key == "set_max_charge_curr": max_val = hw_max
             
+        unique_id = f"{entity_base}_{key}_num"
         payload = {
-            "name": item['name'], "unique_id": f"{entity_base}_{key}_num", "device": dev_info,
+            "name": item['name'], 
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 Object ID
+            "device": dev_info,
             "command_topic": f"{self.cmd_base['number']}/{entity_base}/{key}/set",
             "min": min_val, "max": max_val, "step": ha_conf.get('step', 0.1),
             "mode": ha_conf.get('mode', 'box'), "icon": ha_conf.get('icon', "mdi:dialpad")
@@ -169,8 +184,12 @@ class HAManager:
     def _pub_select(self, uid, entity_base, item, dev_info):
         key = item['key']; ha_conf = item['ha']
         topic = f"{self.prefix}/select/{entity_base}/{key}/config"
+        unique_id = f"{entity_base}_{key}_sel"
         payload = {
-            "name": item['name'], "unique_id": f"{entity_base}_{key}_sel", "device": dev_info,
+            "name": item['name'], 
+            "unique_id": unique_id,
+            "object_id": unique_id, # 🔥 Object ID
+            "device": dev_info,
             "command_topic": f"{self.cmd_base['select']}/{entity_base}/{key}/set",
             "options": ha_conf.get('options', []), "icon": ha_conf.get('icon', "mdi:format-list-bulleted")
         }
@@ -181,7 +200,6 @@ class HAManager:
 
     def publish_state(self, uid, data, sub_topic):
         topic = f"{self.base_topic}/{uid}/{sub_topic}"
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, json.dumps(data), qos=0, retain=False)
     
     def clear_all_discovery(self, unit_ids: list):
@@ -204,5 +222,4 @@ class HAManager:
 
     def _clear(self, entity_base, key, domain):
         topic = f"{self.prefix}/{domain}/{entity_base}/{key}/config"
-        # 🟢 [修正] 使用 self.mqtt
         self.mqtt.publish(topic, "", qos=1, retain=True)
