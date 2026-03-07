@@ -1,4 +1,4 @@
-# ha_manager.py
+# ha_manager.py  ha auto discovery
 import json
 from core_mqtt import RobustMQTTClient
 import logging
