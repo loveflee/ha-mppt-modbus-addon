@@ -86,7 +86,9 @@ class HAManager:
             "payload_on": "ON",
             "payload_off": "OFF"
         }
-        payload["availability_topic"] = self.global_avail_topic
+        #payload["availability_topic"] = self.global_avail_topic
+        # 改成 << 修改
+        payload = self._add_availability(payload, uid)
         self.mqtt.publish(topic, json.dumps(payload), qos=1, retain=True)
 
     def publish_device_availability(self, uid, status):
