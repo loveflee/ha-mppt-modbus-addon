@@ -102,6 +102,7 @@ class HAManager:
             {"topic": self.global_avail_topic, "payload_available": "online", "payload_not_available": "offline"},
             {"topic": device_avail, "payload_available": "online", "payload_not_available": "offline"}
         ]
+        payload["availability_mode"] = "all"  # ← 加這行
         return payload
 
     def _publish_config(self, topic, payload):
