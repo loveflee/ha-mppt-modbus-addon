@@ -97,12 +97,11 @@ class HAManager:
 
     def _add_availability(self, payload, uid):
         device_avail = f"{self.base_topic}_{uid}/availability"
+        # 顯式宣告，確保 HA 準確辨識「設備」與「網關」的雙重上線標準
         payload["availability"] = [
-            {"topic": self.global_avail_topic},
-            {"topic": device_avail}
+            {"topic": self.global_avail_topic, "payload_available": "online", "payload_not_available": "offline"},
+            {"topic": device_avail, "payload_available": "online", "payload_not_available": "offline"}
         ]
-        payload["payload_available"] = "online"
-        payload["payload_not_available"] = "offline"
         return payload
 
     def _publish_config(self, topic, payload):
