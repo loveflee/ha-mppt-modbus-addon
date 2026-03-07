@@ -1,3 +1,4 @@
+# mqtt連線 
 import queue
 import paho.mqtt.client as mqtt
 
@@ -24,8 +25,10 @@ class RobustMQTTClient:
         except Exception as e: print(f"❌ [MQTT] 連線失敗: {e}")
 
     def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False):
-        try: self.client.publish(topic, payload, qos=qos, retain=retain)
-        except: pass
+        try: 
+            self.client.publish(topic, payload, qos=qos, retain=retain)
+        except Exception as e: 
+            print(f"⚠️ [MQTT] Publish 失敗 ({topic}): {e}")
 
     def subscribe(self, topic: str):
         self.client.subscribe(topic)
