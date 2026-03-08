@@ -1,25 +1,14 @@
 # =============================================================================
-
 # main.py - Edge Gateway V3 主控樞紐 V1.2
-
 # 相容：BusMaster V3.8、Driver V1.3、GenericAdapter V2.2
-
 # HAManager V2.9、RobustMQTTClient（mqtt_client.py）
-
 # 修復 V1.1 → V1.2：
-
 # asyncio.get_event_loop() 在 **init** 抓到錯誤 loop
-
 # → self._loop 改在 start() 用 asyncio.get_running_loop() 取得
-
 # Health Monitor getattr 全回 0
-
 # → 從 bus_master.device_states 聚合真實計數
-
 # import json 移至頂層
-
 # =============================================================================
-
 import asyncio
 import signal
 import yaml
@@ -67,11 +56,9 @@ self.start_time = time.monotonic()
     #   asyncio.run() 建立全新 loop，__init__ 裡 get_event_loop() 是不同物件
     #   在 start()（coroutine 內）用 get_running_loop() 才能拿到正確的 loop
     self._loop: asyncio.AbstractEventLoop | None = None
-
 # =========================================================================
 # 設定與地圖載入
 # =========================================================================
-
 def _load_config(self) -> dict:
     try:
         with open(self.config_path, "r", encoding="utf-8") as f:
@@ -106,11 +93,9 @@ def _require(cfg: dict, *keys: str):
             sys.exit(1)
         node = node[k]
     return node
-
 # =========================================================================
 # MQTT 回呼與橋接
 # =========================================================================
-
 def _on_mqtt_connected(self):
     """MQTT 連線/重連成功時觸發（在 paho 執行緒內執行）"""
     logger.info("MQTT 上線，執行 Discovery 與訂閱...")
@@ -169,11 +154,9 @@ async def _mqtt_consumer_task(self):
 
         logger.info(f"[Command] UID={uid} key={key} value={payload_str}")
         await self.bus_master.submit_write(uid, key, payload_str)
-
 # =========================================================================
 # Health Monitor
 # =========================================================================
-
 async def _health_monitor_task(self):
     """
     每 60 秒發布一次網關底層健康數據
@@ -225,11 +208,9 @@ async def _health_monitor_task(self):
             logger.debug(f"[Health] {payload}")
         except Exception as e:
             logger.debug(f"[Health] 發布失敗: {e}")
-
 # =========================================================================
 # 生命週期
 # =========================================================================
-
 async def start(self):
     cfg = self._load_config()
     sys_cfg = cfg.get("system", {})
@@ -261,6 +242,8 @@ async def start(self):
 
     # 3. MQTT
     mqtt_cfg = cfg.get("mqtt", {})
+    # 新增：從 config 抓出 discovery_prefix，沒寫就預設 "homeassistant"
+    discovery_prefix = mqtt_cfg.get("discovery_prefix", "homeassistant")
     self.mqtt_client = RobustMQTTClient(
         broker=self._require(mqtt_cfg, "broker"),
         port=mqtt_cfg.get("port", 1883),
@@ -310,6 +293,8 @@ async def start(self):
             device_type=device_type,
             uid=uid,
             rmap=profile_data,
+            # 新增：把前綴傳給 HAManager
+            discovery_prefix=discovery_prefix
         )
         self.ha_managers[uid] = ha_mgr
 
@@ -357,16 +342,11 @@ async def stop(self):
 
     logger.info("💤 系統已安全停止")
 ```
-
 # =============================================================================
-
 # 進入點與訊號攔截
-
 # =============================================================================
-
 if **name** == “**main**”:
 gateway = EdgeGateway(“config.yaml”)
-
 ```
 def handle_signal(*args):
     """
