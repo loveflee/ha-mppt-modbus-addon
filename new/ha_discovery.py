@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 class HAManager:
     """HA MQTT Discovery 管理器 V2.8 - 全資料驅動、設備解耦、防禦性編程滿配"""
-
-    def __init__(self, mqtt_client, node_id: str, device_type: str, uid: int, rmap):
+    def __init__(self, mqtt_client, node_id: str, device_type: str, uid: int, rmap, discovery_prefix: str = "homeassistant"):
+#    def __init__(self, mqtt_client, node_id: str, device_type: str, uid: int, rmap):
         self.mqtt = mqtt_client
         self.node_id = node_id
         self.device_type = device_type
@@ -22,7 +22,9 @@ class HAManager:
         self.rmap = rmap
 
         self.entity_base         = f"{node_id}_{device_type}_{uid}"
-        self.base_topic          = "homeassistant"
+#        self.base_topic          = "homeassistant"
+        # 改成動態吃參數
+        self.base_topic           = discovery_prefix
         self.state_topic         = f"{node_id}/{device_type}/{uid}/state"
         self.device_status_topic = f"{node_id}/{device_type}/{uid}/status"
         self.gateway_status_topic = f"{node_id}/status"
@@ -38,11 +40,11 @@ class HAManager:
         try:
             data = json.dumps(payload, allow_nan=False) if is_json else payload
             result = self.mqtt.publish(topic, data, qos=qos, retain=retain)
-            
+
             # 檢查 paho publish rc（rc != 0 表示 broker 拒絕或本地佇列滿）
             if hasattr(result, "rc") and result.rc != 0:
                 logger.warning(f"[{self.entity_base}] publish rc={result.rc} topic={topic}")
-                
+
         except (TypeError, ValueError):
             logger.exception(f"[{self.entity_base}] JSON 序列化失敗 topic={topic} payload={payload}")
         except Exception:
@@ -93,10 +95,10 @@ class HAManager:
             "select":        self._build_select_payload,
             "button":        self._build_button_payload,
         }
-        
+
         builder = builder_map.get(domain, self._build_sensor_payload)
         payload = builder(item, key)
-        
+
         if payload is not None:
             self._safe_publish(config_topic, payload, qos=1, retain=True, is_json=True)
 
@@ -160,7 +162,7 @@ class HAManager:
         unit = item.get("unit")
         if unit and unit not in ("Hex", "Bit", "Enum"):
             payload["unit_of_measurement"] = unit
-            
+
         for field in ("device_class", "state_class", "icon"):
             if field in ha:
                 payload[field] = ha[field]
@@ -238,7 +240,7 @@ class HAManager:
         payload = self._get_base_payload(item, key)
         payload.pop("state_topic", None)    # button 無狀態
         payload.pop("value_template", None)
-        
+
         ha = item.get("ha", {})
         payload["command_topic"] = f"{self.node_id}/{self.device_type}/{self.uid}/set/{key}"
         payload["payload_press"] = "PRESS"
