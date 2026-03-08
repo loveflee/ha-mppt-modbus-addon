@@ -5,8 +5,6 @@ import threading
 import paho.mqtt.client as mqtt
 
 logger = logging.getLogger(__name__)
-
-
 class RobustMQTTClient:
 
     def __init__(self, broker: str, port: int,
