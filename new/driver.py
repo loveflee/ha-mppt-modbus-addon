@@ -1,286 +1,391 @@
 # =============================================================================
-# driver.py - V1.3 工業封存版
-# 相容：BusMaster V3.8
-# 修復：
-#   V1.1 : TCP 假死重連、flush 上限、connect timeout、FC 誤殺防護
-#   V1.3 : 短連線串口伺服器抗性（timeout 視同斷線強制重連）
-#          time.monotonic() NTP 免疫、frame 最大接收時間防護
-#          _io_lock 死鎖修復（disconnect 拆出內部版不拿鎖）
-#          reconnect sleep(0.5) 移至鎖外
+
+# main.py - Edge Gateway V3 主控樞紐 V1.2
+
+# 相容：BusMaster V3.8、Driver V1.3、GenericAdapter V2.2
+
+# HAManager V2.9、RobustMQTTClient（mqtt_client.py）
+
+# 修復 V1.1 → V1.2：
+
+# asyncio.get_event_loop() 在 **init** 抓到錯誤 loop
+
+# → self._loop 改在 start() 用 asyncio.get_running_loop() 取得
+
+# Health Monitor getattr 全回 0
+
+# → 從 bus_master.device_states 聚合真實計數
+
+# import json 移至頂層
+
 # =============================================================================
 
 import asyncio
-import time
+import signal
+import yaml
+import importlib
 import logging
+import json
+import sys
+import time
 
-logger = logging.getLogger(__name__)
+from driver import RobustAsyncTcpDriver
+from bus_master import BusMasterScheduler
+from mqtt_client import RobustMQTTClient
+from ha_manager import HAManager
+from generic_adapter import GenericModbusAdapter
 
+logging.basicConfig(
+level=logging.INFO,
+format=’%(asctime)s [%(levelname)s] %(name)s: %(message)s’,
+datefmt=’%Y-%m-%d %H:%M:%S’
+)
+logger = logging.getLogger(“Main”)
 
-class DriverTimeoutError(Exception):
-    """硬體層無回應或物理干擾，交由 Bus Master 處置"""
-    pass
+ADAPTER_FACTORY = {
+“generic”: GenericModbusAdapter,
+# “jkbms”:   JkBmsAdapter,
+# “ampinvt”: AmpinvtAdapter,
+}
 
+class EdgeGateway:
+def **init**(self, config_path: str = “config.yaml”):
+self.config_path = config_path
+self.running = False
+self.start_time = time.monotonic()
 
-class RobustAsyncTcpDriver:
+```
+    self.driver: RobustAsyncTcpDriver | None = None
+    self.bus_master: BusMasterScheduler | None = None
+    self.mqtt_client: RobustMQTTClient | None = None
+    self.ha_managers: dict[int, HAManager] = {}
+    self.node_id = "edge_gw"
+
+    self._cmd_queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+
+    # _loop 不在 __init__ 抓：
+    #   asyncio.run() 建立全新 loop，__init__ 裡 get_event_loop() 是不同物件
+    #   在 start()（coroutine 內）用 get_running_loop() 才能拿到正確的 loop
+    self._loop: asyncio.AbstractEventLoop | None = None
+
+# =========================================================================
+# 設定與地圖載入
+# =========================================================================
+
+def _load_config(self) -> dict:
+    try:
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except Exception:
+        logger.critical(f"無法讀取設定檔 {self.config_path}", exc_info=True)
+        sys.exit(1)
+
+def _load_profile(self, profile_name: str) -> dict:
+    """優先 .yaml，其次 import Python 模組（相容舊版 mppt_map_tw.py）"""
+    try:
+        with open(f"{profile_name}.yaml", "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        pass
+    try:
+        mod = importlib.import_module(profile_name)
+        return {k: getattr(mod, k) for k in dir(mod) if not k.startswith('_')}
+    except ImportError:
+        logger.critical(f"找不到地圖檔: {profile_name}.yaml 或 {profile_name}.py")
+        sys.exit(1)
+
+@staticmethod
+def _require(cfg: dict, *keys: str):
+    """必填欄位驗證，找不到時給出明確錯誤而非 KeyError traceback"""
+    node = cfg
+    path = []
+    for k in keys:
+        path.append(k)
+        if not isinstance(node, dict) or k not in node:
+            logger.critical(f"config.yaml 缺少必填欄位: {' → '.join(path)}")
+            sys.exit(1)
+        node = node[k]
+    return node
+
+# =========================================================================
+# MQTT 回呼與橋接
+# =========================================================================
+
+def _on_mqtt_connected(self):
+    """MQTT 連線/重連成功時觸發（在 paho 執行緒內執行）"""
+    logger.info("MQTT 上線，執行 Discovery 與訂閱...")
+    cmd_topic = f"{self.node_id}/+/+/set/+"
+    self.mqtt_client.subscribe(cmd_topic, qos=1)
+    logger.info(f"已訂閱控制指令: {cmd_topic}")
+    for ha_mgr in self.ha_managers.values():
+        ha_mgr.publish_gateway_online()
+        ha_mgr.send_discovery(cleanup=False)
+
+def _on_mqtt_message(self, msg):
     """
-    協議盲目 TCP→RS485 驅動層
+    paho 執行緒收到訊息時的橋接點
 
-    短連線抗性設計：
-      廉價串口伺服器會主動踢閒置 TCP，timeout 視同死連線
-      每次 timeout/斷線都強制重建 Socket，不依賴長連線假設
-
-    死鎖防護：
-      _disconnect_locked()：內部版，在已持有 _io_lock 時呼叫
-      disconnect()：外部版，自己拿鎖再呼叫內部版
-      _reconnect_locked()：在鎖內執行，sleep 在鎖外（由呼叫方負責）
+    self._loop 在 start() 裡由 get_running_loop() 取得，
+    與 asyncio.run() 建立的 loop 是同一個物件
+    call_soon_threadsafe 將 put_nowait 安全排入正確的 loop
     """
+    if self._loop is None or self._loop.is_closed():
+        return
 
-    def __init__(self, host: str, port: int,
-                 timeout: float = 1.0,
-                 inter_frame_delay: float = 0.18,
-                 connect_timeout: float = 5.0,
-                 idle_timeout: float = 0.03,
-                 max_response_bytes: int = 2048,
-                 max_frame_time: float = 1.0,
-                 flush_max_time: float = 0.05):
-        """
-        :param timeout:           等待設備第一筆回應（秒）
-        :param inter_frame_delay: RS485 收發切換硬體極限（秒）
-        :param connect_timeout:   TCP connect 上限，防 SYN 卡 2 分鐘（秒）
-        :param idle_timeout:      碎包 Idle 判定（秒），30ms 夠用
-        :param max_response_bytes:單次最大接收量，防 OOM 與雜訊攻擊
-        :param max_frame_time:    整個 Frame 最大接收時間（秒），防滴漏攻擊
-        :param flush_max_time:    flush 緩衝區最大時間（秒），防高頻雜訊卡死
-        """
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.inter_frame_delay = inter_frame_delay
-        self.connect_timeout = connect_timeout
-        self.idle_timeout = idle_timeout
-        self.max_response_bytes = max_response_bytes
-        self.max_frame_time = max_frame_time
-        self.flush_max_time = flush_max_time
-
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
-        self._last_comm_time: float = 0.0
-        self._io_lock = asyncio.Lock()
-
-    # =========================================================================
-    # 連線管理
-    # =========================================================================
-
-    async def connect(self) -> bool:
-        """建立 TCP 連線，加 connect_timeout 防 SYN 無回應凍結"""
+    def _put():
         try:
-            logger.info(f"[Driver] 連線 {self.host}:{self.port}")
-            self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port),
-                timeout=self.connect_timeout
-            )
-            logger.info("[Driver] 連線成功")
-            return True
+            self._cmd_queue.put_nowait(msg)
+        except asyncio.QueueFull:
+            logger.error(f"[MQTT Bridge] 指令 Queue 滿，丟棄 topic={msg.topic}")
+
+    self._loop.call_soon_threadsafe(_put)
+
+async def _mqtt_consumer_task(self):
+    """asyncio 端消費橋接 Queue，零延遲推入快車道"""
+    logger.info("[MQTT Consumer] 已啟動")
+    while self.running:
+        try:
+            msg = await asyncio.wait_for(self._cmd_queue.get(), timeout=1.0)
         except asyncio.TimeoutError:
-            logger.error(f"[Driver] 連線 Timeout ({self.connect_timeout}s)")
-            return False
+            continue
+
+        topic_parts = msg.topic.split('/')
+        if len(topic_parts) < 5 or topic_parts[3] != "set":
+            continue
+
+        uid_str = topic_parts[2]
+        key = topic_parts[4]
+        try:
+            uid = int(uid_str)
+        except ValueError:
+            logger.warning(f"[Command] 無效 UID: {uid_str}")
+            continue
+
+        try:
+            payload_str = msg.payload.decode('utf-8').strip()
         except Exception:
-            logger.exception("[Driver] 連線失敗")
-            return False
+            logger.warning(f"[Command] payload 解碼失敗 topic={msg.topic}")
+            continue
 
-    def _close_socket(self, writer):
-        """同步關閉 socket，fire-and-forget，不 await（避免在鎖內長等）"""
-        if writer:
-            try:
-                writer.close()
-            except Exception:
-                pass
+        logger.info(f"[Command] UID={uid} key={key} value={payload_str}")
+        await self.bus_master.submit_write(uid, key, payload_str)
 
-    def _disconnect_locked(self):
-        """
-        內部斷線（在已持有 _io_lock 時呼叫）
+# =========================================================================
+# Health Monitor
+# =========================================================================
 
-        只清理引用與同步關閉 writer，不 await wait_closed()
-        wait_closed() 可能需要 event loop tick，在鎖內 await 會拉長持鎖時間
-        OS 會在適當時機回收 FD，此處不需要等待
-        """
-        writer = self._writer
-        self._reader = None
-        self._writer = None
-        self._close_socket(writer)
+async def _health_monitor_task(self):
+    """
+    每 60 秒發布一次網關底層健康數據
 
-    async def disconnect(self):
-        """
-        外部安全斷線（在鎖外呼叫）
+    數據來源：
+      bus_master.device_states：真實的 timeout_count / success_count / online
+      _cmd_queue.qsize()：當前待處理指令數
+      driver.reconnect_count：若 Driver 後續加入則自動生效（None 則不發出）
 
-        拿鎖後呼叫內部版，確保不與 _send_and_recv 競爭
-        """
-        async with self._io_lock:
-            self._disconnect_locked()
-        logger.info("[Driver] 已斷線")
+    topic: {node_id}/health（不走 HA Discovery，供 Telegraf/Node-RED 撈取）
+    """
+    logger.info("[Health Monitor] 已啟動")
+    health_topic = f"{self.node_id}/health"
 
-    async def _reconnect_locked(self):
-        """
-        內部重連（在已持有 _io_lock 時呼叫）
+    while self.running:
+        await asyncio.sleep(60)
 
-        注意：sleep(0.5) 必須在鎖外執行，否則總線鎖被持有 500ms
-              本函數只做 disconnect + connect，sleep 由呼叫方在 raise 後負責
-        重連失敗拋 DriverTimeoutError，Bus Master 累積斷線計數
-        """
-        self._disconnect_locked()
-        # 在鎖內做 connect：connect 本身有 asyncio.wait_for 保護不會無限等
-        success = await self.connect()
-        if not success:
-            raise DriverTimeoutError("TCP 重連失敗，下次排程繼續重試")
-        logger.info("[Driver] 重連成功")
+        if not self.mqtt_client:
+            continue
 
-    # =========================================================================
-    # 底層 I/O
-    # =========================================================================
+        # 從 bus_master.device_states 聚合真實數據
+        devices_health = {}
+        if self.bus_master:
+            for uid, state in self.bus_master.device_states.items():
+                devices_health[str(uid)] = {
+                    "online":        state.get("online", False),
+                    "timeout_count": state.get("timeout_count", 0),
+                    "success_count": state.get("success_count", 0),
+                }
 
-    async def _flush_buffer(self):
-        """
-        清除殘留雜訊
+        payload: dict = {
+            "uptime_s":       int(time.monotonic() - self.start_time),
+            "cmd_queue_size": self._cmd_queue.qsize(),
+            "devices":        devices_health,
+        }
 
-        雙重上限防護：max_response_bytes + flush_max_time
-        防止高頻雜訊設備將 while True 變成無限迴圈鎖死 _io_lock
-        """
-        if not self._reader:
-            return
-        flushed = 0
-        deadline = time.monotonic() + self.flush_max_time
+        # driver reconnect_count：未實作時不發出誤導性 0
+        reconnect = getattr(self.driver, "reconnect_count", None)
+        if reconnect is not None:
+            payload["driver_reconnect_count"] = reconnect
+
         try:
-            while flushed < self.max_response_bytes:
-                if time.monotonic() > deadline:
-                    logger.warning(f"[Driver] Flush 超時 ({self.flush_max_time}s)，強制中斷")
-                    break
-                chunk = await asyncio.wait_for(self._reader.read(1024), timeout=0.01)
-                if not chunk:
-                    break
-                flushed += len(chunk)
-                logger.debug(f"[Driver] 丟棄殘留 {len(chunk)}B")
-        except asyncio.TimeoutError:
-            pass  # 預期行為，buffer 已空
+            self.mqtt_client.publish(
+                health_topic,
+                json.dumps(payload),
+                qos=0,
+                retain=False,
+            )
+            logger.debug(f"[Health] {payload}")
         except Exception as e:
-            logger.debug(f"[Driver] Flush 異常（可忽略）: {e}")
+            logger.debug(f"[Health] 發布失敗: {e}")
 
-    async def _enforce_inter_frame_delay(self):
-        """確保 RS485 收發切換有足夠硬體時間"""
-        elapsed = time.monotonic() - self._last_comm_time
-        if elapsed < self.inter_frame_delay:
-            await asyncio.sleep(self.inter_frame_delay - elapsed)
+# =========================================================================
+# 生命週期
+# =========================================================================
 
-    async def _send_and_recv(self, payload: bytes) -> bytes:
-        """
-        底層原子化盲發盲收
+async def start(self):
+    cfg = self._load_config()
+    sys_cfg = cfg.get("system", {})
+    self.node_id = sys_cfg.get("node_id", "edge_gw_01")
 
-        死鎖防護：
-          _reconnect_locked() 不呼叫 disconnect()（外部版），
-          而是直接呼叫 _disconnect_locked()（內部版，不拿鎖）
-          sleep(0.5) 在 raise 之後由呼叫方（Bus Master）的 asyncio.sleep 處理
+    log_level = sys_cfg.get("log_level", "INFO").upper()
+    logging.getLogger().setLevel(getattr(logging, log_level, logging.INFO))
 
-        短連線抗性：
-          timeout / TCP FIN / OSError → 強制 _reconnect_locked()
-          保證下次排程拿到的是全新 TCP 通道
-        """
-        async with self._io_lock:
-            # 快照：防止 disconnect() 在通訊途中將 self._reader 設為 None
-            reader = self._reader
-            writer = self._writer
+    # 在 coroutine 內取得正確的 running loop
+    # asyncio.run() 建立的新 loop 在此才是 running 狀態
+    self._loop = asyncio.get_running_loop()
 
-            # 無連線時主動重連（串口伺服器已踢掉 idle TCP）
-            if not reader or not writer:
-                await self._reconnect_locked()
-                reader = self._reader
-                writer = self._writer
+    # 1. Driver
+    drv_cfg = cfg.get("driver", {})
+    self.driver = RobustAsyncTcpDriver(
+        host=self._require(drv_cfg, "host"),
+        port=self._require(drv_cfg, "port"),
+        timeout=drv_cfg.get("timeout", 1.0),
+        inter_frame_delay=drv_cfg.get("inter_frame_delay", 0.18),
+        connect_timeout=drv_cfg.get("connect_timeout", 5.0),
+        idle_timeout=drv_cfg.get("idle_timeout", 0.03),
+        max_response_bytes=drv_cfg.get("max_response_bytes", 2048),
+        max_frame_time=drv_cfg.get("max_frame_time", 1.0),
+    )
+    await self.driver.connect()
 
-            await self._enforce_inter_frame_delay()
-            await self._flush_buffer()
+    # 2. Bus Master
+    self.bus_master = BusMasterScheduler(self.driver)
 
-            # 發送
-            try:
-                writer.write(payload)
-                await writer.drain()
-            except (ConnectionResetError, BrokenPipeError, OSError) as e:
-                logger.warning(f"[Driver] 發送失敗（TCP 斷線）: {e}")
-                await self._reconnect_locked()
-                raise DriverTimeoutError("發送失敗，已重連，下次重試")
+    # 3. MQTT
+    mqtt_cfg = cfg.get("mqtt", {})
+    self.mqtt_client = RobustMQTTClient(
+        broker=self._require(mqtt_cfg, "broker"),
+        port=mqtt_cfg.get("port", 1883),
+        client_id=self.node_id,
+        username=mqtt_cfg.get("username"),
+        password=mqtt_cfg.get("password"),
+    )
+    lwt_topic = f"{self.node_id}/status"
+    self.mqtt_client.set_lwt(lwt_topic, payload="offline", retain=True)
+    self.mqtt_client.on_connected_callback = self._on_mqtt_connected
 
-            # 接收
-            raw_response = bytearray()
-            frame_deadline = time.monotonic() + self.max_frame_time
+    # 橋接：paho on_message → _cmd_queue（self._loop 已在上方設定完畢）
+    _original_on_message = self.mqtt_client._on_message
+    def _bridged_on_message(client, userdata, msg):
+        _original_on_message(client, userdata, msg)
+        self._on_mqtt_message(msg)
+    self.mqtt_client.client.on_message = _bridged_on_message
 
-            try:
-                # 第一筆資料（使用總體 timeout）
-                chunk = await asyncio.wait_for(reader.read(1024), timeout=self.timeout)
-                if not chunk:
-                    logger.warning("[Driver] 對端關閉連線（TCP FIN）")
-                    await self._reconnect_locked()
-                    raise DriverTimeoutError("對端關閉連線，已重連")
-                raw_response.extend(chunk)
+    # 4. 工廠模式載入設備
+    for dev in cfg.get("devices", []):
+        uid = dev.get("uid")
+        adapter_name = dev.get("adapter", "generic")
+        profile_name = dev.get("profile")
+        device_type = dev.get("device_type", "device")
+        poll_interval = dev.get("poll_interval", 10)
 
-                # Idle-Timeout 碎包拼接
-                while True:
-                    if len(raw_response) >= self.max_response_bytes:
-                        raise DriverTimeoutError("接收溢出，可能遭受雜訊攻擊")
-                    if time.monotonic() > frame_deadline:
-                        raise DriverTimeoutError("Frame 超時（滴漏攻擊防護）")
-                    try:
-                        chunk = await asyncio.wait_for(
-                            reader.read(1024), timeout=self.idle_timeout
-                        )
-                        if not chunk:
-                            break
-                        raw_response.extend(chunk)
-                    except asyncio.TimeoutError:
-                        break  # Idle 到期，Frame 收完
+        if not uid or not profile_name:
+            logger.error(f"設備設定不完整，跳過: {dev}")
+            continue
 
-            except (ConnectionResetError, BrokenPipeError, OSError) as e:
-                logger.warning(f"[Driver] 接收失敗（TCP 斷線）: {e}")
-                await self._reconnect_locked()
-                raise DriverTimeoutError("接收失敗，已重連，下次重試")
+        AdapterClass = ADAPTER_FACTORY.get(adapter_name)
+        if not AdapterClass:
+            logger.error(f"跳過 UID={uid}: 找不到 Adapter '{adapter_name}'")
+            continue
 
-            except asyncio.TimeoutError:
-                # 短連線設計：timeout = 串口伺服器踢人 = 死連線
-                # 強制重建 Socket，保證下次排程拿到乾淨通道
-                logger.warning("[Driver] 設備無回應（Timeout），強制重置 Socket")
-                await self._reconnect_locked()
-                raise DriverTimeoutError("無回應，已清洗 Socket，下次重試")
+        profile_data = self._load_profile(profile_name)
 
-        # 鎖已釋放
-        self._last_comm_time = time.monotonic()
-        return bytes(raw_response)
+        try:
+            adapter = AdapterClass(uid, profile_data)
+        except Exception:
+            logger.exception(f"UID={uid} Adapter 實例化失敗，跳過")
+            continue
 
-    # =========================================================================
-    # Bus Master V3.8 介面合約
-    # =========================================================================
+        ha_mgr = HAManager(
+            mqtt_client=self.mqtt_client,
+            node_id=self.node_id,
+            device_type=device_type,
+            uid=uid,
+            rmap=profile_data,
+        )
+        self.ha_managers[uid] = ha_mgr
 
-    async def write(self, payload: bytes) -> bool:
-        """
-        True  : 物理通暢
-        False : 設備 Modbus Exception（業務邏輯拒絕）
-        raise : 無回應 / 斷線（DriverTimeoutError）
+        self.bus_master.register_device(
+            uid=uid,
+            adapter=adapter,
+            ha_manager=ha_mgr,
+            poll_interval=poll_interval,
+        )
+        logger.info(f"✅ 設備已掛載: UID={uid} type={device_type} adapter={adapter_name}")
 
-        Modbus Exception 精確判定（四條件）：
-          len==5、SlaveID 符合、FC 最高位為 1、Exception Code 1~4
-          碰撞機率低於百億分之一，非標協議安全
-        """
-        resp = await self._send_and_recv(payload)
+    # 5. 起飛
+    self.running = True
+    self.mqtt_client.connect()
+    self.bus_master.start()
+    asyncio.create_task(self._mqtt_consumer_task())
+    asyncio.create_task(self._health_monitor_task())
 
-        if (len(resp) == 5 and len(payload) >= 2
-                and resp[0] == payload[0]
-                and 1 <= resp[2] <= 4):
-            sent_fc = payload[1]
-            recv_fc = resp[1]
-            if recv_fc == (sent_fc | 0x80):
-                logger.warning(
-                    f"[Driver] Modbus Exception: Slave={resp[0]} "
-                    f"FC=0x{sent_fc:02X} Code={resp[2]}"
-                )
-                return False
+    logger.info("🚀 Edge Gateway V3 啟動完成")
 
-        return True
+    while self.running:
+        await asyncio.sleep(1)
 
-    async def read(self, payload: bytes) -> bytes:
-        """協議盲目：回傳 Raw Bytes，解碼由 Adapter 負責"""
-        return await self._send_and_recv(payload)
+async def stop(self):
+    """優雅關機：依序停止排程、廣播 offline、釋放連線"""
+    if not self.running:
+        return
+    logger.info("執行優雅關機...")
+    self.running = False
+
+    if self.bus_master:
+        self.bus_master.stop()
+
+    for ha_mgr in self.ha_managers.values():
+        try:
+            ha_mgr.publish_gateway_offline()
+        except Exception:
+            pass
+
+    if self.mqtt_client:
+        self.mqtt_client.disconnect()
+
+    if self.driver:
+        await self.driver.disconnect()
+
+    logger.info("💤 系統已安全停止")
+```
+
+# =============================================================================
+
+# 進入點與訊號攔截
+
+# =============================================================================
+
+if **name** == “**main**”:
+gateway = EdgeGateway(“config.yaml”)
+
+```
+def handle_signal(*args):
+    """
+    signal handler 必須是同步函數
+
+    gateway._loop 在 start() 裡設定，signal 觸發時已是正確的 running loop
+    call_soon_threadsafe 確保 stop() 在 event loop 執行緒內安全排程
+    """
+    logger.warning("收到終止訊號，開始優雅關機...")
+    if gateway._loop and not gateway._loop.is_closed():
+        gateway._loop.call_soon_threadsafe(
+            gateway._loop.create_task, gateway.stop()
+        )
+
+signal.signal(signal.SIGINT, handle_signal)
+signal.signal(signal.SIGTERM, handle_signal)
+
+try:
+    asyncio.run(gateway.start())
+except KeyboardInterrupt:
+    pass
+```
