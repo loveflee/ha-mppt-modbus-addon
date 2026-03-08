@@ -1,3 +1,4 @@
+# mqtt_client.py - 自動重連、訂閱恢復、OOM 防護、HAManager rc 相容
 import queue
 import logging
 import threading
