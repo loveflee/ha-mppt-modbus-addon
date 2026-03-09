@@ -1,6 +1,5 @@
 # =============================================================================
-# File: generic_adapter.py
-# Description: 工業級通用 Modbus 設備解析器 V2.3 (架構重構版)
+# File: generic_adapter.py 工業級通用 Modbus 設備解析器 V2.3 (架構重構版)
 # 修復歷程：
 #   V2.3 : 將 decode() 重構，拆分出純函數 _extract_data()。
 #          解決子類 (如 TCP Adapter) 呼叫 super().decode() 時觸發 Python MRO
