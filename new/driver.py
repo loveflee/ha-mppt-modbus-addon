@@ -1,25 +1,14 @@
 # =============================================================================
-
 # main.py - Edge Gateway V3 主控樞紐 V1.2
-
 # 相容：BusMaster V3.8、Driver V1.3、GenericAdapter V2.2
-
 # HAManager V2.9、RobustMQTTClient（mqtt_client.py）
-
 # 修復 V1.1 → V1.2：
-
 # asyncio.get_event_loop() 在 **init** 抓到錯誤 loop
-
 # → self._loop 改在 start() 用 asyncio.get_running_loop() 取得
-
 # Health Monitor getattr 全回 0
-
 # → 從 bus_master.device_states 聚合真實計數
-
 # import json 移至頂層
-
 # =============================================================================
-
 import asyncio
 import signal
 import yaml
@@ -169,11 +158,9 @@ async def _mqtt_consumer_task(self):
 
         logger.info(f"[Command] UID={uid} key={key} value={payload_str}")
         await self.bus_master.submit_write(uid, key, payload_str)
-
 # =========================================================================
 # Health Monitor
 # =========================================================================
-
 async def _health_monitor_task(self):
     """
     每 60 秒發布一次網關底層健康數據
@@ -225,11 +212,9 @@ async def _health_monitor_task(self):
             logger.debug(f"[Health] {payload}")
         except Exception as e:
             logger.debug(f"[Health] 發布失敗: {e}")
-
 # =========================================================================
 # 生命週期
 # =========================================================================
-
 async def start(self):
     cfg = self._load_config()
     sys_cfg = cfg.get("system", {})
@@ -357,13 +342,9 @@ async def stop(self):
 
     logger.info("💤 系統已安全停止")
 ```
-
 # =============================================================================
-
 # 進入點與訊號攔截
-
 # =============================================================================
-
 if **name** == “**main**”:
 gateway = EdgeGateway(“config.yaml”)
 
