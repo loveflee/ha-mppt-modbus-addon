@@ -1,23 +1,13 @@
 # =============================================================================
-
 # driver.py - V1.3 工業封存版
-
 # 相容：BusMaster V3.8
-
 # 修復：
-
 # V1.1 : TCP 假死重連、flush 上限、connect timeout、FC 誤殺防護
-
 # V1.3 : 短連線串口伺服器抗性（timeout 視同斷線強制重連）
-
 # time.monotonic() NTP 免疫、frame 最大接收時間防護
-
 # _io_lock 死鎖修復（disconnect 拆出內部版不拿鎖）
-
 # reconnect sleep(0.5) 移至鎖外
-
 # =============================================================================
-
 import asyncio
 import time
 import logging
