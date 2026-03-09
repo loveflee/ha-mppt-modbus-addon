@@ -22,7 +22,7 @@ import asyncio
 import time
 import logging
 
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 class DriverTimeoutError(Exception):
 “”“硬體層無回應或物理干擾，交由 Bus Master 處置”””
