@@ -1,38 +1,42 @@
 # =============================================================================
-# ha_manager.py - V2.8 工業封存版
+# ha_manager.py - V2.9 真・工業封存版
 # 模組名稱：Home Assistant MQTT Discovery 管理模組
-# 修復：類別縮排錯誤、__name__ 語法、publish rc 檢查、options 元素型別驗證
+# 修復 1：動態 discovery_prefix，徹底解除硬編碼
+# 修復 2：引入 _get_rmap_field，完美相容 Dict (YAML) 與 Object (PY) 地圖檔
 # 適用設備：MPPT 控制器、BMS、逆變器、電錶、IO 模組、RS485 傳感器
 # =============================================================================
 
 import logging
 import json
 
-# 修正：必須使用 Python 內建模組變數 __name__
 logger = logging.getLogger(__name__)
 
 class HAManager:
-    """HA MQTT Discovery 管理器 V2.8 - 全資料驅動、設備解耦、防禦性編程滿配"""
+    """HA MQTT Discovery 管理器 V2.9 - 支援動態前綴與雙態地圖解析"""
+    
     def __init__(self, mqtt_client, node_id: str, device_type: str, uid: int, rmap, discovery_prefix: str = "homeassistant"):
-#    def __init__(self, mqtt_client, node_id: str, device_type: str, uid: int, rmap):
         self.mqtt = mqtt_client
         self.node_id = node_id
         self.device_type = device_type
         self.uid = uid
         self.rmap = rmap
 
-        self.entity_base         = f"{node_id}_{device_type}_{uid}"
-#        self.base_topic          = "homeassistant"
-        # 改成動態吃參數
-        self.base_topic           = discovery_prefix
-        self.state_topic         = f"{node_id}/{device_type}/{uid}/state"
-        self.device_status_topic = f"{node_id}/{device_type}/{uid}/status"
+        self.entity_base          = f"{node_id}_{device_type}_{uid}"
+        self.base_topic           = discovery_prefix  # 動態吃參數
+        self.state_topic          = f"{node_id}/{device_type}/{uid}/state"
+        self.device_status_topic  = f"{node_id}/{device_type}/{uid}/status"
         self.gateway_status_topic = f"{node_id}/status"
-        self.device_identifiers  = [f"{node_id}_{device_type}_addr{uid}"]
+        self.device_identifiers   = [f"{node_id}_{device_type}_addr{uid}"]
 
     # =========================================================================
-    # 防禦層
+    # 防禦層與地圖解析支援
     # =========================================================================
+
+    def _get_rmap_field(self, field_name: str):
+        """安全提取地圖欄位，相容 dict (JSON/YAML) 與 object (Class)"""
+        if isinstance(self.rmap, dict):
+            return self.rmap.get(field_name)
+        return getattr(self.rmap, field_name, None)
 
     def _safe_publish(self, topic: str, payload, qos: int = 1,
                       retain: bool = False, is_json: bool = True):
@@ -41,7 +45,6 @@ class HAManager:
             data = json.dumps(payload, allow_nan=False) if is_json else payload
             result = self.mqtt.publish(topic, data, qos=qos, retain=retain)
 
-            # 檢查 paho publish rc（rc != 0 表示 broker 拒絕或本地佇列滿）
             if hasattr(result, "rc") and result.rc != 0:
                 logger.warning(f"[{self.entity_base}] publish rc={result.rc} topic={topic}")
 
@@ -55,20 +58,21 @@ class HAManager:
     # =========================================================================
 
     def send_discovery(self, cleanup: bool = False):
-        """發布或清除所有實體 Discovery。cleanup=True 請先於 send_discovery() 呼叫"""
         op = "清除" if cleanup else "發送"
-        logger.info(f"[{self.entity_base}] {op} HA Discovery V2.8...")
+        logger.info(f"[{self.entity_base}] {op} HA Discovery V2.9...")
 
-        # B1_INFO：list 格式
-        if hasattr(self.rmap, "B1_INFO"):
-            for item in self.rmap.B1_INFO:
+        # 使用安全提取方法
+        b1_info = self._get_rmap_field("B1_INFO")
+        if b1_info:
+            for item in b1_info:
                 if not isinstance(item, dict) or "ha" not in item or "key" not in item:
                     continue
                 self._process_item(item, item["key"], cleanup)
 
-        # B3_STATUS_BITS：dict 格式，必須用 .items() 迭代
-        if hasattr(self.rmap, "B3_STATUS_BITS"):
-            for key, item in self.rmap.B3_STATUS_BITS.items():
+        # 使用安全提取方法
+        b3_bits = self._get_rmap_field("B3_STATUS_BITS")
+        if b3_bits:
+            for key, item in b3_bits.items():
                 if not isinstance(item, dict) or "ha" not in item:
                     continue
                 self._process_item({**item, "key": key}, key, cleanup)
@@ -107,24 +111,20 @@ class HAManager:
     # =========================================================================
 
     def publish_state(self, data_dict: dict):
-        """發布狀態數據（qos=0, retain=False）。NaN 值會被攔截記錄"""
         if not isinstance(data_dict, dict):
             return
         self._safe_publish(self.state_topic, data_dict, qos=0, retain=False, is_json=True)
 
     def set_availability(self, online: bool):
-        """發布設備可用性：輪詢成功=online，連續失敗=offline"""
         self._safe_publish(self.device_status_topic,
                            "online" if online else "offline",
                            qos=1, retain=True, is_json=False)
 
     def publish_gateway_online(self):
-        """網關上線，應在 on_connected callback 中呼叫"""
         self._safe_publish(self.gateway_status_topic, "online", qos=1, retain=True, is_json=False)
         logger.info(f"📡 [{self.node_id}] 網關：online")
 
     def publish_gateway_offline(self):
-        """網關離線，應在 SIGTERM handler 中呼叫；崩潰時由 LWT 自動處理"""
         self._safe_publish(self.gateway_status_topic, "offline", qos=1, retain=True, is_json=False)
         logger.info(f"📡 [{self.node_id}] 網關：offline")
 
@@ -133,12 +133,11 @@ class HAManager:
     # =========================================================================
 
     def _get_base_payload(self, item: dict, key: str) -> dict:
-        """所有實體共用基礎 payload（雙重 AND 可用性）"""
         unique_id = f"{self.entity_base}_{key}"
         return {
             "name":           item.get("name", key),
             "unique_id":      unique_id,
-            "object_id":      unique_id,   # 強制 entity_id，避免中文產生拼音
+            "object_id":      unique_id,
             "state_topic":    self.state_topic,
             "value_template": f"{{{{ value_json.{key} }}}}",
             "device": {
@@ -148,16 +147,13 @@ class HAManager:
                 "manufacturer": "Edge-BusMaster",
             },
             "availability": [
-                {"topic": self.gateway_status_topic,
-                 "payload_available": "online", "payload_not_available": "offline"},
-                {"topic": self.device_status_topic,
-                 "payload_available": "online", "payload_not_available": "offline"},
+                {"topic": self.gateway_status_topic, "payload_available": "online", "payload_not_available": "offline"},
+                {"topic": self.device_status_topic, "payload_available": "online", "payload_not_available": "offline"},
             ],
             "availability_mode": "all",
         }
 
     def _apply_common(self, payload: dict, item: dict) -> dict:
-        """套用 unit / device_class / state_class / icon"""
         ha = item.get("ha", {})
         unit = item.get("unit")
         if unit and unit not in ("Hex", "Bit", "Enum"):
@@ -189,13 +185,10 @@ class HAManager:
 
         state_key = ha.get("state_key")
         if state_key:
-            # 注意：state_key 的數據必須包含在 publish_state() 發布的同一個 JSON 內
-            # 若 switch 狀態來自不同 topic（如 state_bits），需在呼叫端合併後一起發布
             payload["value_template"] = f"{{{{ value_json.{state_key} }}}}"
             payload["state_on"]  = "ON"
             payload["state_off"] = "OFF"
         else:
-            # 無狀態回讀：樂觀模式，UI 立即反映，防止開關回彈
             payload.pop("state_topic", None)
             payload.pop("value_template", None)
             payload["optimistic"] = True
@@ -209,7 +202,7 @@ class HAManager:
         payload["min"]             = ha.get("min", 0)
         payload["max"]             = ha.get("max", 100)
         payload["step"]            = ha.get("step", 1)
-        payload["mode"]            = ha.get("mode", "box")  # box=文字輸入，slider=滑桿
+        payload["mode"]            = ha.get("mode", "box")
         payload["entity_category"] = "config"
         return payload
 
@@ -217,7 +210,6 @@ class HAManager:
         ha = item.get("ha", {})
         options = ha.get("options", [])
 
-        # 嚴格校驗：必須是非空的純字串 list，否則 HA select 建立失敗
         if not isinstance(options, list) or not options:
             logger.warning(f"[{self.entity_base}] select '{key}' options 缺失，跳過")
             return None
@@ -238,7 +230,7 @@ class HAManager:
 
     def _build_button_payload(self, item: dict, key: str) -> dict:
         payload = self._get_base_payload(item, key)
-        payload.pop("state_topic", None)    # button 無狀態
+        payload.pop("state_topic", None)
         payload.pop("value_template", None)
 
         ha = item.get("ha", {})
