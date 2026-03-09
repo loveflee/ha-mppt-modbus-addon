@@ -1,7 +1,6 @@
 # =======================================================
 # Edge Gateway V3 核心設定檔
 # =======================================================
-
 system:
   node_id: "edge_gw_01"       # 網關唯一 ID (影響 HA MQTT Topic 命名)
   log_level: "INFO"           # DEBUG, INFO, WARNING, ERROR
