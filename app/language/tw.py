@@ -322,6 +322,7 @@ CONTROL_SWITCHES = {
         "name": "充電功能開關",
         "on_code": 0x01, "off_code": 0x02,
         "icon": "mdi:battery-check",
+        "state_key": "charge_relay",  # 👈 補上這把鑰匙，對齊 B1_STATUS_BITS 的繼電器狀態
         "ha": {"type": "switch"}
     },
     "load_enable": {
