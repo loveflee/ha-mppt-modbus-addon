@@ -191,30 +191,30 @@ B1_INFO = [
     # ⚠️ bcd_time=True：4個byte各代表一個十進位digit，不是整數
     #    解碼：HH = data[0]*10+data[1]  MM = data[2]*10+data[3]
     #    輸出建議格式化為 "HH:MM" 字串
-    {
-        "key": "time1_on", "name": "時控1開啟時間",
-        "unit": None, "scale": 1, "offset": 68, "length": 4, "signed": False,
-        "bcd_time": True,
-        "ha": {"type": "sensor", "icon": "mdi:clock-start"}
-    },
-    {
-        "key": "time1_off", "name": "時控1關閉時間",
-        "unit": None, "scale": 1, "offset": 72, "length": 4, "signed": False,
-        "bcd_time": True,
-        "ha": {"type": "sensor", "icon": "mdi:clock-end"}
-    },
-    {
-        "key": "time2_on", "name": "時控2開啟時間",
-        "unit": None, "scale": 1, "offset": 76, "length": 4, "signed": False,
-        "bcd_time": True,
-        "ha": {"type": "sensor", "icon": "mdi:clock-start"}
-    },
-    {
-        "key": "time2_off", "name": "時控2關閉時間",
-        "unit": None, "scale": 1, "offset": 80, "length": 4, "signed": False,
-        "bcd_time": True,
-        "ha": {"type": "sensor", "icon": "mdi:clock-end"}
-    },
+#    {
+#        "key": "time1_on", "name": "時控1開啟時間",
+#        "unit": None, "scale": 1, "offset": 68, "length": 4, "signed": False,
+#        "bcd_time": True,
+#        "ha": {"type": "sensor", "icon": "mdi:clock-start"}
+#    },
+#    {
+#        "key": "time1_off", "name": "時控1關閉時間",
+#        "unit": None, "scale": 1, "offset": 72, "length": 4, "signed": False,
+#        "bcd_time": True,
+#        "ha": {"type": "sensor", "icon": "mdi:clock-end"}
+#    },
+#    {
+#        "key": "time2_on", "name": "時控2開啟時間",
+#        "unit": None, "scale": 1, "offset": 76, "length": 4, "signed": False,
+#        "bcd_time": True,
+#        "ha": {"type": "sensor", "icon": "mdi:clock-start"}
+#    },
+#    {
+#        "key": "time2_off", "name": "時控2關閉時間",
+#        "unit": None, "scale": 1, "offset": 80, "length": 4, "signed": False,
+#        "bcd_time": True,
+#        "ha": {"type": "sensor", "icon": "mdi:clock-end"}
+#    },
     # Byte 84~91: 備用，略過
     # Byte 92: 校驗碼，由協議層處理
 ]
