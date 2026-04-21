@@ -1,8 +1,10 @@
-# 🌞 Ampinvt MPPT 智慧監控系統 (V7.7)
+# 🌞 Ampinvt MPPT 智慧監控系統 (V7.8)
 
 這是為佛山金廣源 (Ampinvt) MPPT 太陽能充電控制器設計的高級監控與控制 Add-on。本專案專注於 **穩定性、硬體安全性** 與 **惡劣通訊環境下的高韌性 (Resilience)**。
 
 ---
+## 7.8
+  * pv vol
 
 ## ✨ 核心功能與特色 (Key Features)
 
