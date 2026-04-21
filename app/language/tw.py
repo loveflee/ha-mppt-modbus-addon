@@ -349,15 +349,15 @@ D0_PARAMS = {
     # ── 0x11：型號編碼寫入 ────────────────────────────────────
     # ✅ V2.2 新增：手冊有定義，原版漏掉
     # 1 byte，數值 1~255，代表不同型號，通常由廠商設定，謹慎使用
-    0x11: {
-        "key": "set_model_code", "name": "設定-型號編碼",
-        "data_len": 1, "scale": 1, "valid_bytes": [6],
-        "ha": {
-            "type": "number", "min": 1, "max": 255, "step": 1,
-            "mode": "box", "icon": "mdi:barcode-edit", "link_b1": "model_code",
-            "entity_category": "config"
-        }
-    },
+#    0x11: {
+#        "key": "set_model_code", "name": "設定-型號編碼",
+#        "data_len": 1, "scale": 1, "valid_bytes": [6],
+#        "ha": {
+#            "type": "number", "min": 1, "max": 255, "step": 1,
+#            "mode": "box", "icon": "mdi:barcode-edit", "link_b1": "model_code",
+#            "entity_category": "config"
+#        }
+#    },
 
     # ── 0x12：時控旗標 ────────────────────────────────────────
     0x12: {
