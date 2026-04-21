@@ -146,9 +146,9 @@ B1_INFO = [
     },
     {
         # 🆕 Byte 53：時控組旗標
-        # Bit0=時控組1啟用, Bit1=時控組2啟用
         "key": "time_ctrl_flag", "name": "時控組啟用標志",
         "unit": None, "scale": 1, "offset": 53, "length": 1, "signed": False,
+        "map": {0: "全部關閉", 1: "開啟組1", 2: "開啟組2", 3: "全部開啟"}, # 👈 補上這行：數值與字串的翻譯蒟蒻
         "ha": {"type": "sensor", "icon": "mdi:clock-check"}
     },
     {
@@ -379,7 +379,7 @@ D0_PARAMS = {
         "data_len": 1, "scale": 1, "valid_bytes": [6],
         "ha": {"type": "select",
                "options": ["全部關閉", "開啟組1", "開啟組2", "全部開啟"],
-               "icon": "mdi:clock-check"}
+               "icon": "mdi:clock-check", "link_b1": "time_ctrl_flag"} # 👈 補上 link_b1
     },
     0x21: {
         "key": "set_equalize_voltage", "name": "設定-均充電壓",
@@ -459,30 +459,29 @@ D0_PARAMS = {
         "data_len": 4, "scale": 1, "valid_bytes": [3, 4, 5, 6],
         "bcd_time": True,
         "ha": {"type": "text", "icon": "mdi:clock-start",
-               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"}
+               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "link_b1": "time1_on"} # 👈 補上 link_b1
     },
     0x2E: {
         "key": "set_time1_off", "name": "設定-時控1關閉時間",
         "data_len": 4, "scale": 1, "valid_bytes": [3, 4, 5, 6],
         "bcd_time": True,
         "ha": {"type": "text", "icon": "mdi:clock-end",
-               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"}
+               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "link_b1": "time1_off"} # 👈 補上 link_b1
     },
     0x2F: {
         "key": "set_time2_on", "name": "設定-時控2開啟時間",
         "data_len": 4, "scale": 1, "valid_bytes": [3, 4, 5, 6],
         "bcd_time": True,
         "ha": {"type": "text", "icon": "mdi:clock-start",
-               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"}
+               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "link_b1": "time2_on"} # 👈 補上 link_b1
     },
     0x30: {
         "key": "set_time2_off", "name": "設定-時控2關閉時間",
         "data_len": 4, "scale": 1, "valid_bytes": [3, 4, 5, 6],
         "bcd_time": True,
         "ha": {"type": "text", "icon": "mdi:clock-end",
-               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"}
+               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "link_b1": "time2_off"} # 👈 補上 link_b1
     },
-}
 
 
 # ═══════════════════════════════════════════════════════════════
