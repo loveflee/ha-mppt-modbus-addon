@@ -7,10 +7,9 @@ logger = logging.getLogger("HA_MGR")
 
 class HAManager:
     """
-    🏠 HA Manager V8.0 (UTF-8 Fix & Text Entity Support)
-    🔥 修改 1：統一加入 _dumps 解決 JSON 中文 Unicode 跳脫導致的 HA 拼音亂碼問題。
-    🔥 修改 2：新增 _pub_text 支援時控功能 (bcd_time) 的文字輸入實體。
-    🔥 修改 3：嚴格指定 object_id，保證 Entity ID 全英文。
+    🏠 HA Manager V8.1 (UTF-8 Fix, Text Entity & Indent Corrected)
+    🔥 修正：嚴格對齊所有 class 內部方法的縮排，解決 AttributeError。
+    🔥 升級：完整支援 text 實體 (時控輸入) 與狀態回饋閉環。
     """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
         self.mqtt = mqtt
@@ -22,21 +21,20 @@ class HAManager:
         
         self.global_avail_topic = f"{self.prefix}/sensor/{self.node_id}_mppt/status"
         
-        # 新增 text 指令路徑
         self.cmd_base = {
             "switch": f"{self.prefix}/switch",
             "button": f"{self.prefix}/button",
             "number": f"{self.prefix}/number",
             "select": f"{self.prefix}/select",
-            "text": f"{self.prefix}/text"
+            "text": f"{self.prefix}/text"  # 🔥 補上 text 的命令路徑
         }
 
     def _dumps(self, payload: dict) -> str:
-        """ 底層邏輯：強制關閉 ASCII 轉換，直接輸出 UTF-8，防止 HA 解析名稱出錯 """
+        """ 強制 UTF-8 輸出，解決 HA 實體變成拼音的底層問題 """
         return json.dumps(payload, ensure_ascii=False)
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        logger.info("📤 發送 HA Discovery (V8.0 UTF-8 強制版)...")
+        logger.info("📤 發送 HA Discovery (V8.1)...")
         for uid in unit_ids:
             entity_base = f"{self.node_id}_mppt_{uid}"
             dev_info = self._get_dev_info(uid)
@@ -70,14 +68,14 @@ class HAManager:
                         self._pub_number(uid, entity_base, item, dev_info, details)
                     elif ha_type == 'select': 
                         self._pub_select(uid, entity_base, item, dev_info)
-                    elif ha_type == 'text':  # 🔥 新增 text 實體支援 (時控專用)
-                        self._pub_text(uid, entity_base, item, dev_info)
+                    elif ha_type == 'text':  
+                        self._pub_text(uid, entity_base, item, dev_info) # 🔥 呼叫 Text 發佈
 
     def _get_dev_info(self, uid):
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT Controller #{uid}",
-            "model": "Ampinvt V8.0",
+            "model": "Ampinvt V8.1",
             "manufacturer": "ampinvt",
         }
 
@@ -96,6 +94,7 @@ class HAManager:
         return payload
 
     def _publish_config(self, topic, payload):
+        """ 統一的發佈出口，確保全部走 _dumps (UTF-8) """
         self.mqtt.publish(topic, self._dumps(payload), qos=1, retain=True)
 
     def _pub_connectivity(self, uid, entity_base, dev_info):
@@ -221,8 +220,8 @@ class HAManager:
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
         self._publish_config(topic, self._add_availability(payload, uid))
 
-def _pub_text(self, uid, entity_base, item, dev_info):
-        """ 🔥 專為時控字串設計的實體發佈函數 (具備狀態回饋閉環) """
+    def _pub_text(self, uid, entity_base, item, dev_info):
+        """ 🔥 確保這個函數嚴格縮排在 class 內部，負責時控的字串下發 """
         key = item['key']
         ha_conf = item['ha']
         topic = f"{self.prefix}/text/{entity_base}/{key}/config"
@@ -233,11 +232,10 @@ def _pub_text(self, uid, entity_base, item, dev_info):
             "object_id": unique_id,
             "device": dev_info,
             "command_topic": f"{self.cmd_base['text']}/{entity_base}/{key}/set",
-            # 👇 這兩行是核心！讓 HA 抓取設備目前設定的時間並顯示在輸入框內
-            "state_topic": f"{self.base_topic}/{uid}/state_b1",
-            "value_template": f"{{{{ value_json.{key} }}}}", 
+            "state_topic": f"{self.base_topic}/{uid}/state_b1", # 接收設備當前時間
+            "value_template": f"{{{{ value_json.{key} }}}}",
             "icon": ha_conf.get('icon', "mdi:form-textbox"),
-            "pattern": ha_conf.get('pattern') # 啟動正則防呆
+            "pattern": ha_conf.get('pattern') # 啟用 HA 前端防呆正則
         }
         self._publish_config(topic, self._add_availability(payload, uid))
 
@@ -262,7 +260,7 @@ def _pub_text(self, uid, entity_base, item, dev_info):
             if hasattr(self.rmap, 'D0_PARAMS'):
                 for code, item in self.rmap.D0_PARAMS.items():
                     ha_type = item['ha']['type']
-                    self._clear(entity_base, item['key'], ha_type) # 自動清除對應類型 (包含 text)
+                    self._clear(entity_base, item['key'], ha_type)
 
     def _clear(self, entity_base, key, domain):
         topic = f"{self.prefix}/{domain}/{entity_base}/{key}/config"
