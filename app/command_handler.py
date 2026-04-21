@@ -24,6 +24,7 @@ class CommandHandler:
             elif domain == "button": self._handle_button(uid, key)
             elif domain == "number": self._handle_number(uid, key, payload)
             elif domain == "select": self._handle_select(uid, key, payload)
+            elif domain == "text": self._handle_text(uid, key, payload) # 👇 修正：新增 text 路由
 
         except Exception as e:
             logger.error(f"指令處理錯誤: {e}")
@@ -79,21 +80,40 @@ class CommandHandler:
     def _handle_select(self, uid, key, payload):
         target, code = self._find_d0(key)
         if target:
+            ha_conf = target.get('ha', {})
             map_dict = None
-            link = target.get('ha', {}).get('link_b1')
-            # 使用 self.rmap
+            link = ha_conf.get('link_b1')
+            
+            # 尋找對應的 mapping 字典
             for b in self.rmap.B1_INFO:
-                if b['key'] == link: map_dict = b.get('map'); break
+                if b['key'] == link: 
+                    map_dict = b.get('map')
+                    break
+                    
             val = None
             if map_dict:
                 for k, v in map_dict.items():
-                    if v == payload: val = k; break
-                if val is None and ":" in payload:
-                    try: val = int(payload.split(':')[0])
-                    except: pass
+                    if v == payload: 
+                        val = k
+                        break
+                        
+            # 👇 修正：如果沒有 link_b1 (樂觀模式)，直接比對 options 陣列的 Index
+            if val is None and ha_conf.get('optimistic'):
+                options = ha_conf.get('options', [])
+                if payload in options:
+                    val = options.index(payload)
+
             if val is not None:
                 logger.info(f"👉 [Select] 設定 {key} = {payload} (ID={val})")
                 self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, 1, target['valid_bytes'])
+
+    # 👇 修正：新增獨立的 text 處理函數 (專門處理 "HH:MM" 字串)
+    def _handle_text(self, uid, key, payload):
+        target, code = self._find_d0(key)
+        if target:
+            logger.info(f"👉 [Text] 設定 {key} = {payload}")
+            # payload 已經是 "HH:MM" 字串，直接傳給 protocol 處理 BCD 轉換
+            self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, payload, 1, target['valid_bytes'])
 
     def _find_d0(self, key):
         for c, i in self.rmap.D0_PARAMS.items():
