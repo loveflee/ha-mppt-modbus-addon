@@ -358,12 +358,15 @@ D0_PARAMS = {
         "ha": {"type": "number", "min": 1, "max": 16, "step": 1,
                "mode": "box", "icon": "mdi:battery-plus", "link_b1": "battery_count"}
     },
+
     0x0B: {
-        "key": "set_recognition_mode", "name": "設定-識別方式",
-        "data_len": 1, "scale": 1, "valid_bytes": [6],
-        "ha": {"type": "select", "options": ["自動識別", "手動設定"],
-               "icon": "mdi:eye-settings", "link_b1": "recognition_mode"}
-    },
+    "key": "set_recognition_mode", "name": "設定-識別方式",
+    "data_len": 1, "scale": 1, "valid_bytes": [6],
+    "ha": {"type": "select", 
+    "options": ["自動識別", "手動設定", "手動(24V)", "手動(36V)", "手動(48V)", "手動(60V)", "手動(72V)", "手動(84V)", "手動(96V)"],
+    "icon": "mdi:eye-settings", "link_b1": "recognition_mode"}
+},
+    
     0x0C: {
         "key": "set_load_mode", "name": "設定-負載模式",
         "data_len": 1, "scale": 1, "valid_bytes": [6],
