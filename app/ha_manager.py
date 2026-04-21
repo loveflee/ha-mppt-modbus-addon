@@ -247,10 +247,15 @@ class HAManager:
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_b1"
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
             
+        # 👇 修正：將地圖的 optimistic 屬性正確推給 HA
+        if ha_conf.get('optimistic'):
+            payload["optimistic"] = True
+            
         if ha_conf.get('entity_category'):
             payload["entity_category"] = ha_conf['entity_category']
             
         self._publish_config(topic, self._add_availability(payload, uid))
+
 
     def _pub_text(self, uid, entity_base, item, dev_info):
         key = item['key']
