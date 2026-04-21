@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import time
 from core_mqtt import RobustMQTTClient
 import logging
 
@@ -7,9 +8,10 @@ logger = logging.getLogger("HA_MGR")
 
 class HAManager:
     """
-    🏠 HA Manager V8.1 (UTF-8 Fix, Text Entity & Indent Corrected)
-    🔥 修正：嚴格對齊所有 class 內部方法的縮排，解決 AttributeError。
-    🔥 升級：完整支援 text 實體 (時控輸入) 與狀態回饋閉環。
+    🏠 HA Manager V8.2 (防呆裝甲 + 防洪版)
+    🔥 修正：加入 try-except，確保單一錯誤不會導致其他設備無法生成。
+    🔥 修正：加入微秒延遲，防止 MQTT Broker 瞬間丟包。
+    🔥 修正：修復 _pub_text 的 value_template 狀態追蹤邏輯。
     """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
         self.mqtt = mqtt
@@ -26,56 +28,65 @@ class HAManager:
             "button": f"{self.prefix}/button",
             "number": f"{self.prefix}/number",
             "select": f"{self.prefix}/select",
-            "text": f"{self.prefix}/text"  # 🔥 補上 text 的命令路徑
+            "text": f"{self.prefix}/text"
         }
 
     def _dumps(self, payload: dict) -> str:
-        """ 強制 UTF-8 輸出，解決 HA 實體變成拼音的底層問題 """
         return json.dumps(payload, ensure_ascii=False)
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        logger.info("📤 發送 HA Discovery (V8.1)...")
+        logger.info(f"📤 發送 HA Discovery (V8.2 防呆版) 預計生成設備: {unit_ids}")
         for uid in unit_ids:
-            entity_base = f"{self.node_id}_mppt_{uid}"
-            dev_info = self._get_dev_info(uid)
-            details = device_details.get(uid, {'count': 1, 'type': 0, 'hw_max': 60.0})
-            
-            self.publish_device_availability(uid, "online")
-            self._pub_connectivity(uid, entity_base, dev_info)
-            
-            for item in self.rmap.B1_INFO:
-                if "ha" in item: 
-                    self._pub(uid, entity_base, item, dev_info, "sensor", "state_b1")
-            
-            for key, item in self.rmap.B3_STATUS_BITS.items():
-                item['key'] = key 
-                self._pub(uid, entity_base, item, dev_info, "binary_sensor", "state_bits", is_bin=True)
+            try:
+                entity_base = f"{self.node_id}_mppt_{uid}"
+                dev_info = self._get_dev_info(uid)
+                details = device_details.get(uid, {'count': 1, 'type': 0, 'hw_max': 60.0})
+                
+                self.publish_device_availability(uid, "online")
+                self._pub_connectivity(uid, entity_base, dev_info)
+                
+                for item in self.rmap.B1_INFO:
+                    if "ha" in item: 
+                        self._pub(uid, entity_base, item, dev_info, "sensor", "state_b1")
+                
+                for key, item in self.rmap.B3_STATUS_BITS.items():
+                    item['key'] = key 
+                    self._pub(uid, entity_base, item, dev_info, "binary_sensor", "state_bits", is_bin=True)
 
-            if hasattr(self.rmap, 'CONTROL_SWITCHES'):
-                for key, item in self.rmap.CONTROL_SWITCHES.items():
-                    item['key'] = key
-                    self._pub_switch(uid, entity_base, item, dev_info)
-                    
-            if hasattr(self.rmap, 'CONTROL_BUTTONS'):
-                for key, item in self.rmap.CONTROL_BUTTONS.items():
-                    item['key'] = key
-                    self._pub_button(uid, entity_base, item, dev_info)
-                    
-            if hasattr(self.rmap, 'D0_PARAMS'):
-                for code, item in self.rmap.D0_PARAMS.items():
-                    ha_type = item['ha']['type']
-                    if ha_type == 'number': 
-                        self._pub_number(uid, entity_base, item, dev_info, details)
-                    elif ha_type == 'select': 
-                        self._pub_select(uid, entity_base, item, dev_info)
-                    elif ha_type == 'text':  
-                        self._pub_text(uid, entity_base, item, dev_info) # 🔥 呼叫 Text 發佈
+                if hasattr(self.rmap, 'CONTROL_SWITCHES'):
+                    for key, item in self.rmap.CONTROL_SWITCHES.items():
+                        item['key'] = key
+                        self._pub_switch(uid, entity_base, item, dev_info)
+                        
+                if hasattr(self.rmap, 'CONTROL_BUTTONS'):
+                    for key, item in self.rmap.CONTROL_BUTTONS.items():
+                        item['key'] = key
+                        self._pub_button(uid, entity_base, item, dev_info)
+                        
+                if hasattr(self.rmap, 'D0_PARAMS'):
+                    for code, item in self.rmap.D0_PARAMS.items():
+                        ha_type = item['ha']['type']
+                        if ha_type == 'number': 
+                            self._pub_number(uid, entity_base, item, dev_info, details)
+                        elif ha_type == 'select': 
+                            self._pub_select(uid, entity_base, item, dev_info)
+                        elif ha_type == 'text':  
+                            self._pub_text(uid, entity_base, item, dev_info)
+                
+                # 防洪機制：每建完一台休息 0.05 秒，避免 MQTT Broker 負載過高丟包
+                time.sleep(0.05)
+                logger.info(f"✅ 設備 #{uid} HA 實體配置發送成功")
+
+            except Exception as e:
+                # 就算這台報錯，也要印出錯誤並繼續下一台
+                logger.error(f"❌ 設備 #{uid} HA Discovery 建立失敗: {e}")
+                continue 
 
     def _get_dev_info(self, uid):
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT Controller #{uid}",
-            "model": "Ampinvt V8.1",
+            "model": "Ampinvt V8.2",
             "manufacturer": "ampinvt",
         }
 
@@ -94,7 +105,6 @@ class HAManager:
         return payload
 
     def _publish_config(self, topic, payload):
-        """ 統一的發佈出口，確保全部走 _dumps (UTF-8) """
         self.mqtt.publish(topic, self._dumps(payload), qos=1, retain=True)
 
     def _pub_connectivity(self, uid, entity_base, dev_info):
@@ -221,22 +231,27 @@ class HAManager:
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_text(self, uid, entity_base, item, dev_info):
-        """ 🔥 確保這個函數嚴格縮排在 class 內部，負責時控的字串下發 """
         key = item['key']
         ha_conf = item['ha']
         topic = f"{self.prefix}/text/{entity_base}/{key}/config"
         unique_id = f"{entity_base}_{key}_txt"
+        
+        # 修正：精準抓取 B1_INFO 裡的狀態 Key
+        state_key = ha_conf.get('link_b1', key)
+        
         payload = {
             "name": item['name'],
             "unique_id": unique_id,
             "object_id": unique_id,
             "device": dev_info,
             "command_topic": f"{self.cmd_base['text']}/{entity_base}/{key}/set",
-            "state_topic": f"{self.base_topic}/{uid}/state_b1", # 接收設備當前時間
-            "value_template": f"{{{{ value_json.{key} }}}}",
-            "icon": ha_conf.get('icon', "mdi:form-textbox"),
-            "pattern": ha_conf.get('pattern') # 啟用 HA 前端防呆正則
+            "state_topic": f"{self.base_topic}/{uid}/state_b1", 
+            "value_template": f"{{{{ value_json.{state_key} }}}}",
+            "icon": ha_conf.get('icon', "mdi:form-textbox")
         }
+        if ha_conf.get('pattern'):
+            payload["pattern"] = ha_conf.get('pattern')
+            
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def publish_state(self, uid, data, sub_topic):
