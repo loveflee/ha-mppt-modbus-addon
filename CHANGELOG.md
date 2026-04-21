@@ -3,6 +3,10 @@
 All notable changes to the "Ampinvt MPPT Monitor" project will be documented in this file.
 本專案的所有重大變更都將記錄在此文件中
 
+## [7.8.0] - Extreme Resilience Edition (2025-12-09)
+
+* **TW**: Pv vol
+
 ## [7.7.0] - Extreme Resilience Edition (2025-12-09)
 
 ### 🛡️ Resilience & Safety (韌性與安全性)
