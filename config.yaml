@@ -1,5 +1,5 @@
 name: "MPPT Modbus MQTT Poller"
-version: "7.7"
+version: "7.8"
 slug: "mppt_modbus_mqtt_poller"
 description: "透過Modbus-gateway(串口服務器透傳模式)讀取Ampinvt MPPTv1.1,發佈到MQTT，支援HA Discovery與HA上設定參數,Advanced MPPT Monitor with Multi-language support and bi-directional control."
 url: "https://github.com/loveflee/ha-mppt-modbus-addon"
@@ -27,7 +27,7 @@ options:
   modbus:
     host: "192.168.106.12"
     port: 502
-    unit_ids: "1"
+    unit_ids: "1,2,3,4,5"
     timeout: 3.0
     retry_delay: 2.0
   mqtt:
