@@ -8,11 +8,10 @@ logger = logging.getLogger("HA_MGR")
 
 class HAManager:
     """
-    🏠 HA Manager V8.3 (防呆裝甲 + 防洪版 + 版面淨化)
+    🏠 HA Manager V8.2 (防呆裝甲 + 防洪版)
     🔥 修正：加入 try-except，確保單一錯誤不會導致其他設備無法生成。
     🔥 修正：加入微秒延遲，防止 MQTT Broker 瞬間丟包。
     🔥 修正：修復 _pub_text 的 value_template 狀態追蹤邏輯。
-    🔥 升級：全面支援 entity_category，將實體精準分流至「診斷」與「配置」面板。
     """
     def __init__(self, mqtt: RobustMQTTClient, config: dict, rmap):
         self.mqtt = mqtt
@@ -36,7 +35,7 @@ class HAManager:
         return json.dumps(payload, ensure_ascii=False)
 
     def send_discovery(self, unit_ids: list, device_details: dict = {}):
-        logger.info(f"📤 發送 HA Discovery (V8.3 版面淨化版) 預計生成設備: {unit_ids}")
+        logger.info(f"📤 發送 HA Discovery (V8.2 防呆版) 預計生成設備: {unit_ids}")
         for uid in unit_ids:
             try:
                 entity_base = f"{self.node_id}_mppt_{uid}"
@@ -87,7 +86,7 @@ class HAManager:
         return {
             "identifiers": [f"{self.node_id}_mppt_addr{uid}"],
             "name": f"MPPT Controller #{uid}",
-            "model": "Ampinvt V8.3",
+            "model": "Ampinvt V8.2",
             "manufacturer": "ampinvt",
         }
 
@@ -118,7 +117,6 @@ class HAManager:
             "device": dev_info,
             "state_topic": f"{self.base_topic}_{uid}/connectivity_state",
             "device_class": "connectivity", 
-            "entity_category": "diagnostic",  # 強制將連線狀態歸入診斷
             "payload_on": "ON",
             "payload_off": "OFF"
         }
@@ -141,14 +139,9 @@ class HAManager:
             "value_template": f"{{{{ value_json.{key} }}}}",
         }
         if not is_bin and item.get('unit'): payload["unit_of_measurement"] = item['unit']
-        
-        if item.get('ha'):
-            ha_conf = item['ha']
-            if ha_conf.get('icon'): payload["icon"] = ha_conf['icon']
-            if ha_conf.get('device_class'): payload["device_class"] = ha_conf['device_class']
-            if ha_conf.get('state_class'): payload["state_class"] = ha_conf['state_class']
-            if ha_conf.get('entity_category'): payload["entity_category"] = ha_conf['entity_category']
-            
+        if item['ha'].get('icon'): payload["icon"] = item['ha']['icon']
+        if item['ha'].get('device_class'): payload["device_class"] = item['ha']['device_class']
+        if item['ha'].get('state_class'): payload["state_class"] = item['ha']['state_class']
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_switch(self, uid, entity_base, item, dev_info):
@@ -167,10 +160,6 @@ class HAManager:
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_bits"
             payload["value_template"] = f"{{{{ value_json.{item['state_key']} }}}}"
         else: payload["optimistic"] = True
-        
-        if item.get('ha', {}).get('entity_category'):
-            payload["entity_category"] = item['ha']['entity_category']
-            
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_button(self, uid, entity_base, item, dev_info):
@@ -186,9 +175,6 @@ class HAManager:
             "payload_press": "PRESS", 
             "icon": item.get('icon', "mdi:gesture-tap-button")
         }
-        if item.get('ha', {}).get('entity_category'):
-            payload["entity_category"] = item['ha']['entity_category']
-            
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_number(self, uid, entity_base, item, dev_info, details):
@@ -223,10 +209,6 @@ class HAManager:
         if ha_conf.get('link_b1'):
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_b1"
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
-            
-        if ha_conf.get('entity_category'):
-            payload["entity_category"] = ha_conf['entity_category']
-            
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_select(self, uid, entity_base, item, dev_info):
@@ -246,10 +228,6 @@ class HAManager:
         if ha_conf.get('link_b1'):
             payload["state_topic"] = f"{self.base_topic}/{uid}/state_b1"
             payload["value_template"] = f"{{{{ value_json.{ha_conf['link_b1']} }}}}"
-            
-        if ha_conf.get('entity_category'):
-            payload["entity_category"] = ha_conf['entity_category']
-            
         self._publish_config(topic, self._add_availability(payload, uid))
 
     def _pub_text(self, uid, entity_base, item, dev_info):
@@ -258,6 +236,7 @@ class HAManager:
         topic = f"{self.prefix}/text/{entity_base}/{key}/config"
         unique_id = f"{entity_base}_{key}_txt"
         
+        # 修正：精準抓取 B1_INFO 裡的狀態 Key
         state_key = ha_conf.get('link_b1', key)
         
         payload = {
@@ -272,9 +251,6 @@ class HAManager:
         }
         if ha_conf.get('pattern'):
             payload["pattern"] = ha_conf.get('pattern')
-            
-        if ha_conf.get('entity_category'):
-            payload["entity_category"] = ha_conf['entity_category']
             
         self._publish_config(topic, self._add_availability(payload, uid))
 
