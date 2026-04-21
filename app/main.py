@@ -149,7 +149,8 @@ def main():
                 ha_mgr.publish_connectivity_state(uid, True)
         
         mqtt_client.publish(ha_mgr.global_avail_topic, "online", retain=True)
-        for t in ["switch", "button", "number", "select"]:
+        # 👇 修正：補上 "text" 網域訂閱
+        for t in ["switch", "button", "number", "select", "text"]:
             mqtt_client.subscribe(f"{mqtt_cfg['discovery_prefix']}/{t}/+/+/set")
         logger.info("👂 MQTT 準備就緒")
 
