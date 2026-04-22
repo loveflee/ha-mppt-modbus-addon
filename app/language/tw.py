@@ -36,6 +36,7 @@ B1_INFO = [
         "unit": None, "scale": 1, "offset": 12, "length": 1, "signed": False,
         "ha": {"type": "sensor", "icon": "mdi:identifier", "entity_category": "diagnostic"}
     },
+    # ── 設備設定參數 (Diagnostic) ──────────────────────────────
     {
         "key": "baud_rate", "name": "通訊波特率",
         "unit": None, "scale": 1, "offset": 13, "length": 1, "signed": False,
@@ -43,37 +44,38 @@ B1_INFO = [
         "ha": {"type": "sensor", "icon": "mdi:speedometer", "entity_category": "diagnostic"}
     },
 
-    # ── 電壓電流設定參數 (Diagnostic) ─────────────────────────
+    # ── 🛡️ 接通設定回饋鏈路 (修正新增：Byte 16 ~ 27) ──
     {
         "key": "rated_voltage", "name": "系統額定電壓",
         "unit": "V", "scale": 100, "offset": 16, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
     },
     {
-        "key": "equalize_voltage", "name": "均充電壓設定",
+        "key": "equalize_voltage", "name": "均充電壓設定值",
         "unit": "V", "scale": 100, "offset": 18, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
     },
     {
-        "key": "float_voltage", "name": "浮充電壓設定",
+        "key": "float_voltage", "name": "浮充電壓設定值",
         "unit": "V", "scale": 100, "offset": 20, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
     },
     {
-        "key": "discharge_limit_voltage", "name": "放電電壓下限",
+        "key": "discharge_limit_voltage", "name": "放電電壓下限值",
         "unit": "V", "scale": 100, "offset": 22, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
     },
     {
-        "key": "hw_max_charge_current", "name": "硬體最大充電電流",
+        "key": "hw_max_charge_current", "name": "硬體最大充電電流限制",
         "unit": "A", "scale": 100, "offset": 24, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "current", "icon": "mdi:current-dc", "entity_category": "diagnostic"}
     },
     {
-        "key": "max_charge_current", "name": "設定最大充電電流",
+        "key": "max_charge_current", "name": "用戶設定最大電流限制",
         "unit": "A", "scale": 100, "offset": 26, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "current", "entity_category": "diagnostic"}
     },
+    # ── 修正結束：鏈路已接通 ──
     {
         "key": "run_charge_current_limit", "name": "運行充電電流限制",
         "unit": "A", "scale": 100, "offset": 28, "length": 2, "signed": False,
