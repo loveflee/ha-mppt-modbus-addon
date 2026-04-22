@@ -1,132 +1,121 @@
-# 通訊與解碼心臟
 import logging
-from datetime import datetime
-from core_tcp import RobustTCPClient
+import time
+from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger("Proto")
+logger = logging.getLogger("CMD")
 
-class AmpinvtProtocol:
-    def __init__(self, tcp_client: RobustTCPClient, debug: bool = False):
-        self.transport = tcp_client
-        self.debug = debug
+class CommandHandler:
+    # 🟢 接收 rmap
+    def __init__(self, protocol, ha_mgr, rmap, timezone_offset=8):
+        self.protocol = protocol
+        self.ha_mgr = ha_mgr
+        self.rmap = rmap # 儲存
+        self.tz_offset = timezone_offset
 
-    def _calc_checksum(self, data: bytes) -> int:
-        return sum(data) & 0xFF
+    def process_message(self, topic: str, payload: str):
+        try:
+            parts = topic.split('/')
+            if len(parts) < 4: return
+            key, entity_base, domain = parts[-2], parts[-3], parts[-4]
+            try: uid = int(entity_base.split('_')[-1])
+            except: return
 
-    # 🛡️ 技師重刀：寫入操作的嚴格驗證器 (擋下 0xEE 錯誤與壞包)
-    def _verify_write_response(self, resp: bytes) -> bool:
-        if not resp or len(resp) != 8:
-            if self.debug: logger.warning("❌ 寫入回應長度異常或無回應")
-            return False
-        
-        # 1. 驗證 Checksum
-        if self._calc_checksum(resp[:-1]) != resp[-1]:
-            logger.warning("❌ 寫入回應 Checksum 錯誤")
-            return False
-            
-        # 2. 攔截 0xEE 設備拒絕代碼
-        if resp[1] == 0xEE:
-            err_map = {1: "當前狀態不能完成操作", 2: "不能識別的參數代碼", 3: "參數數據溢出"}
-            err_msg = err_map.get(resp[2], f"未知錯誤碼 ({resp[2]})")
-            logger.error(f"❌ 設備拒絕指令: {err_msg}")
-            return False
-            
-        return True
+            if domain == "switch": self._handle_switch(uid, key, payload)
+            elif domain == "button": self._handle_button(uid, key)
+            elif domain == "number": self._handle_number(uid, key, payload)
+            elif domain == "select": self._handle_select(uid, key, payload)
+            elif domain == "text": self._handle_text(uid, key, payload) # 👇 修正：新增 text 路由
 
-    def read_b1_data(self, unit_id: int):
-        req = bytearray([unit_id, 0xB1, 0x01, 0x00, 0x00, 0x00, 0x00])
-        req.append(self._calc_checksum(req))
-        if self.debug: logger.debug(f"TX [{unit_id}] Read: {req.hex(' ')}")
-        if not self.transport.send(req): return None
-        resp = self.transport.recv_fixed(93)
-        if self.debug and resp: logger.debug(f"RX [{unit_id}]: {resp.hex(' ')}")
-        if not resp or len(resp) != 93: return None
-        if self._calc_checksum(resp[:-1]) != resp[-1]: return None
-        return resp
+        except Exception as e:
+            logger.error(f"指令處理錯誤: {e}")
 
-    def write_c0_command(self, unit_id: int, control_code: int) -> bool:
-        req = bytearray([unit_id, 0xC0, control_code, 0x00, 0x00, 0x00, 0x00])
-        req.append(self._calc_checksum(req))
-        if self.debug: logger.info(f"TX [{unit_id}] Write C0: {req.hex(' ')}")
-        if not self.transport.send(req): return False
-        resp = self.transport.recv_fixed(8)
-        return self._verify_write_response(resp) # 🛡️ 套用嚴格驗證
-
-    # 🔥 修改：支援 val 傳入字串 "HH:MM"，並轉譯為 4 Byte BCD 下發給設備
-    def write_d0_command(self, unit_id: int, code: int, val, scale: float, vbytes: list) -> bool:
-        req = bytearray([unit_id, 0xD0, code, 0x00, 0x00, 0x00, 0x00])
-        
-        # 判斷是否為時控字串 (例如 "08:30")
-        if isinstance(val, str) and ":" in val:
-            try:
-                h, m = map(int, val.split(":"))
-                req[3] = h // 10  # 時十位
-                req[4] = h % 10   # 時個位
-                req[5] = m // 10  # 分十位
-                req[6] = m % 10   # 分個位
-            except ValueError:
-                logger.error(f"❌ 無效的時間格式: {val}")
-                return False
+    def _write_and_verify(self, uid, write_func, *args):
+        time.sleep(0.3)
+        if write_func(*args):
+            logger.info("⚡ 寫入成功，準備回讀狀態...")
+            time.sleep(0.5) 
+            raw_data = self.protocol.read_b1_data(uid)
+            if raw_data:
+                logger.info("✅ 回讀成功，更新 HA")
+                # 使用 self.rmap
+                vals = self.protocol.decode(raw_data, self.rmap.B1_INFO)
+                bits = self.protocol.decode(raw_data, self.rmap.B3_STATUS_BITS, is_bits=True)
+                self.ha_mgr.publish_state(uid, vals, "state_b1")
+                self.ha_mgr.publish_state(uid, bits, "state_bits")
+            else:
+                logger.warning("⚠️ 回讀失敗")
         else:
-            # 一般數字處理邏輯
-            int_val = int(round(float(val) / scale))
-            if len(vbytes) == 1: 
-                req[vbytes[0]] = int_val & 0xFF
-            elif len(vbytes) == 2:
-                req[vbytes[0]] = (int_val >> 8) & 0xFF
-                req[vbytes[1]] = int_val & 0xFF
+            logger.warning("⚠️ 寫入無回應，嘗試重送...")
+            time.sleep(1.0)
+            if write_func(*args): logger.info("✅ 重送成功")
+            else: logger.error("❌ 寫入最終失敗")
 
-        req.append(self._calc_checksum(req))
-        if self.debug: logger.info(f"TX [{unit_id}] Write D0: {req.hex(' ')}")
-        if not self.transport.send(req): return False
-        resp = self.transport.recv_fixed(8)
-        return self._verify_write_response(resp) # 🛡️ 套用嚴格驗證
+    def _handle_switch(self, uid, key, payload):
+        switch_def = self.rmap.CONTROL_SWITCHES.get(key)
+        if switch_def:
+            cmd = switch_def['on_code'] if payload.upper() == "ON" else switch_def['off_code']
+            logger.info(f"👉 [Switch] 切換 {key} -> {payload}")
+            self._write_and_verify(uid, self.protocol.write_c0_command, uid, cmd)
 
-    def write_time_sync(self, unit_id: int, dt: datetime) -> bool:
-        req = bytearray([unit_id, 0xDF, dt.year % 100, dt.month, dt.day, dt.hour, dt.minute])
-        req.append(self._calc_checksum(req))
-        if self.debug: logger.info(f"TX [{unit_id}] TimeSync: {req.hex(' ')}")
-        if not self.transport.send(req): return False
-        resp = self.transport.recv_fixed(8)
-        return self._verify_write_response(resp) # 🛡️ 套用嚴格驗證
+    def _handle_button(self, uid, key):
+        btn_def = self.rmap.CONTROL_BUTTONS.get(key)
+        if btn_def:
+            if btn_def.get('code') == 0xDF:
+                local_dt = datetime.now(timezone.utc) + timedelta(hours=self.tz_offset)
+                logger.info(f"⏰ 同步時間: {local_dt}")
+                self.protocol.write_time_sync(uid, local_dt)
+            else:
+                logger.info(f"👉 [Button] 觸發 {key}")
+                self._write_and_verify(uid, self.protocol.write_c0_command, uid, btn_def['code'])
 
-    # 🔥 修改：加入 bcd_time 攔截器，將 4 byte 解析回字串 "HH:MM"
-    def decode(self, raw_bytes, map_list, is_bits=False):
-        import struct
-        result = {}
-        if is_bits:
-            for key, info in map_list.items():
-                if info['byte'] < len(raw_bytes):
-                    is_on = bool((raw_bytes[info['byte']] >> info['bit']) & 0x01)
-                    result[key] = "ON" if is_on else "OFF"
-            return result
-            
-        for item in map_list:
-            key, off, ln, sc = item['key'], item['offset'], item['length'], item['scale']
-            if off + ln > len(raw_bytes): continue
-            chunk = raw_bytes[off : off + ln]
-            val = 0
+    def _handle_number(self, uid, key, payload):
+        target, code = self._find_d0(key)
+        if target:
             try:
-                # 💡 時控解碼攔截點
-                if item.get("bcd_time") and ln == 4:
-                    h = chunk[0] * 10 + chunk[1]
-                    m = chunk[2] * 10 + chunk[3]
-                    result[key] = f"{h:02d}:{m:02d}"
-                    continue  # 直接跳到下一個點位，不執行後面的數字解析
+                val = float(payload)
+                logger.info(f"👉 [Number] 設定 {key} = {val}")
+                self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, target['scale'], target['valid_bytes'])
+            except: pass
 
-                if ln == 1: val = chunk[0]
-                elif ln == 2: val = struct.unpack('>h' if item.get('signed') else '>H', chunk)[0]
-                elif ln == 4: val = struct.unpack('>i' if item.get('signed') else '>I', chunk)[0]
-                
-                if item.get('map') and val in item['map']: 
-                    result[key] = item['map'][val]
-                else: 
-                    result[key] = round(val / sc, 2) if sc != 1 else val
-            except Exception as e:
-                if self.debug: logger.warning(f"解碼錯誤 {key}: {e}")
-                pass
-                
-        if "battery_voltage" in result and "charge_current" in result:
-             try: result["charge_power"] = round(result["battery_voltage"] * result["charge_current"], 1)
-             except: pass
-        return result
+    def _handle_select(self, uid, key, payload):
+        target, code = self._find_d0(key)
+        if target:
+            ha_conf = target.get('ha', {})
+            map_dict = None
+            link = ha_conf.get('link_b1')
+            
+            # 尋找對應的 mapping 字典
+            for b in self.rmap.B1_INFO:
+                if b['key'] == link: 
+                    map_dict = b.get('map')
+                    break
+                    
+            val = None
+            if map_dict:
+                for k, v in map_dict.items():
+                    if v == payload: 
+                        val = k
+                        break
+                        
+            # 👇 修正：如果沒有 link_b1 (樂觀模式)，直接比對 options 陣列的 Index
+            if val is None and ha_conf.get('optimistic'):
+                options = ha_conf.get('options', [])
+                if payload in options:
+                    val = options.index(payload)
+
+            if val is not None:
+                logger.info(f"👉 [Select] 設定 {key} = {payload} (ID={val})")
+                self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, val, 1, target['valid_bytes'])
+
+    # 👇 修正：新增獨立的 text 處理函數 (專門處理 "HH:MM" 字串)
+    def _handle_text(self, uid, key, payload):
+        target, code = self._find_d0(key)
+        if target:
+            logger.info(f"👉 [Text] 設定 {key} = {payload}")
+            # payload 已經是 "HH:MM" 字串，直接傳給 protocol 處理 BCD 轉換
+            self._write_and_verify(uid, self.protocol.write_d0_command, uid, code, payload, 1, target['valid_bytes'])
+
+    def _find_d0(self, key):
+        for c, i in self.rmap.D0_PARAMS.items():
+            if i['key'] == key: return i, c
+        return None, None

@@ -1,45 +1,81 @@
-# mqtt連線 
-import queue
-import paho.mqtt.client as mqtt
+import socket
+import time
+import logging
 
-class RobustMQTTClient:
-    def __init__(self, broker: str, port: int, username: str = None, password: str = None):
-        self.broker = broker
+logger = logging.getLogger("TCP")
+
+class RobustTCPClient:
+    def __init__(self, host: str, port: int, timeout: float = 3.0):
+        self.host = host
         self.port = port
-        self.msg_queue = queue.Queue()
-        self.on_connected_callback = None 
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        if username: self.client.username_pw_set(username, password)
-        self.client.on_connect = self._on_connect
-        self.client.on_message = self._on_message
-        self.client.on_disconnect = self._on_disconnect
+        self.timeout = timeout
+        self._sock = None
 
-    def set_lwt(self, topic: str, payload: str = "offline", retain: bool = True):
-        self.client.will_set(topic, payload, qos=1, retain=retain)
-
-    def connect(self):
+    def connect(self) -> bool:
         try:
-            print(f"📡 [MQTT] 連線至 {self.broker} ...")
-            self.client.connect(self.broker, self.port, 60)
-            self.client.loop_start()
-        except Exception as e: print(f"❌ [MQTT] 連線失敗: {e}")
+            self.close() 
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._sock.settimeout(self.timeout)
+            self._sock.connect((self.host, self.port))
+            time.sleep(0.1) 
+            return True
+        except Exception:
+            self._sock = None
+            return False
 
-    def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False):
-        try: 
-            self.client.publish(topic, payload, qos=qos, retain=retain)
-        except Exception as e: 
-            print(f"⚠️ [MQTT] Publish 失敗 ({topic}): {e}")
+    def close(self):
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+                self._sock.close()
+            except: pass
+        self._sock = None
 
-    def subscribe(self, topic: str):
-        self.client.subscribe(topic)
+    def flush_buffer(self):
+        """🔥 優化：強制清空緩衝區，防止讀到舊資料"""
+        if not self._sock: return
+        try:
+            self._sock.settimeout(0.05)
+            while True:
+                chunk = self._sock.recv(4096)
+                if not chunk: break
+        except socket.timeout: pass
+        except Exception: self.close()
+        finally:
+            if self._sock: self._sock.settimeout(self.timeout)
 
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
-        if rc == 0:
-            if self.on_connected_callback: self.on_connected_callback()
-        else: print(f"❌ [MQTT] 連線拒絕: {rc}")
+    def send(self, data: bytes) -> bool:
+        if not self._sock:
+            if not self.connect(): return False
+        try:
+            self.flush_buffer()
+            self._sock.sendall(data)
+            return True
+        except Exception:
+            self.close()
+            return False
 
-    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
-        if reason_code != 0: print(f"⚠️ [MQTT] 斷線 ({reason_code})")
-        
-    def _on_message(self, client, userdata, msg):
-        self.msg_queue.put(msg)
+    def recv_fixed(self, length: int) -> bytes:
+        if not self._sock: return None
+        data = b''
+        start_time = time.time()
+        try:
+            while len(data) < length:
+                if (time.time() - start_time) > self.timeout:
+                    if len(data) > 0:
+                        logger.warning(f"⚠️ 接收超時，僅收到 {len(data)}/{length} bytes")
+                    return None
+                
+                needed = length - len(data)
+                chunk = self._sock.recv(needed)
+                
+                if not chunk:
+                    self.close(); return None
+                data += chunk
+            return data
+        except socket.timeout: return None
+        except Exception as e:
+            logger.error(f"接收錯誤: {e}")
+            self.close()
+            return None

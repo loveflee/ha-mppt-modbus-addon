@@ -1,4 +1,4 @@
-# mqtt連線
+# mqtt連線 
 import queue
 import paho.mqtt.client as mqtt
 
@@ -7,7 +7,7 @@ class RobustMQTTClient:
         self.broker = broker
         self.port = port
         self.msg_queue = queue.Queue()
-        self.on_connected_callback = None
+        self.on_connected_callback = None 
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         if username: self.client.username_pw_set(username, password)
         self.client.on_connect = self._on_connect
@@ -25,9 +25,9 @@ class RobustMQTTClient:
         except Exception as e: print(f"❌ [MQTT] 連線失敗: {e}")
 
     def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False):
-        try:
+        try: 
             self.client.publish(topic, payload, qos=qos, retain=retain)
-        except Exception as e:
+        except Exception as e: 
             print(f"⚠️ [MQTT] Publish 失敗 ({topic}): {e}")
 
     def subscribe(self, topic: str):
@@ -40,6 +40,6 @@ class RobustMQTTClient:
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
         if reason_code != 0: print(f"⚠️ [MQTT] 斷線 ({reason_code})")
-
+        
     def _on_message(self, client, userdata, msg):
         self.msg_queue.put(msg)
