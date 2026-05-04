@@ -50,7 +50,17 @@ B1_INFO = [
         "unit": "V", "scale": 100, "offset": 16, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
     },
+# ── 🚨 專供「額定電壓 Select」狀態閉環的影子點位 ──
     {
+        "key": "rated_voltage_sel_sync", "name": "額定電壓(UI同步)",
+        "unit": None, "scale": 1, "offset": 16, "length": 2, "signed": False,
+        "map": {
+            1200: "12V", 2400: "24V", 3600: "36V", 4800: "48V",
+            6000: "60V", 7200: "72V", 8400: "84V", 9600: "96V"
+        },
+        "ha": {"type": "sensor", "entity_category": "diagnostic"}
+    },
+	{
         "key": "equalize_voltage", "name": "均充電壓設定值",
         "unit": "V", "scale": 100, "offset": 18, "length": 2, "signed": False,
         "ha": {"type": "sensor", "device_class": "voltage", "entity_category": "diagnostic"}
