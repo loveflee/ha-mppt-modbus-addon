@@ -331,17 +331,14 @@ D0_PARAMS = {
     },
 
     # ── 0x0A：電池額定電壓等級 ────────────────────────────────
-    # ✅ V2.2 修正：原版誤寫為「電池串數」，手冊明確定義為「額定電壓等級」
-    # 手冊：0=自動識別，1=12V，2=24V，3=36V，4=48V，5=60V，6=72V，7=84V，8=96V
-    # 選項索引值直接對應送出的 byte 值
-	0x0A: {
+    0x0A: {
         "key": "set_rated_voltage_level", "name": "設定-額定電壓等級",
         "data_len": 1, "scale": 1, "valid_bytes": [6],
         "ha": {
             "type": "select",
             "options": ["自動識別", "12V", "24V", "36V", "48V", "60V", "72V", "84V", "96V"],
             "icon": "mdi:sine-wave",
-            "optimistic": True, # 👈 拔掉 link_b1，交給 HA 原生的樂觀模式處理
+            "link_b1": "rated_voltage_sel_sync", # 👈 重新掛載真實狀態，消滅空白
             "entity_category": "config"
         }
     },
